@@ -150,7 +150,7 @@ impl Parser {
   }
 
   fn new_internal_error(&self, msg: &str) {
-    error::new_internal_error("Parser", msg);
+    error::new_internal_error("HTML Parser", msg);
   }
 }
 

@@ -163,6 +163,7 @@ mod test {
     let input = "
 <div id=\"main\" class=\"test\">
   <p>Hello <em>world</em>!</p>
+  <p>Test</p>
 </div>
 ";
 
@@ -175,7 +176,7 @@ mod test {
       assert_eq!(&elm.attributes.get("class").unwrap(), &"test");
     }
     
-    assert_eq!(div.children.len(), 1);
+    assert_eq!(div.children.len(), 2);
 
     let p_tag = &div.children[0];
     if let NodeType::Element(elm) = &p_tag.node_type {
@@ -202,6 +203,17 @@ mod test {
     let text_node = &p_tag.children[2];
     if let NodeType::Text(s) = &text_node.node_type {
       assert_eq!(s, "!");
+    }
+
+    let p_tag = &div.children[1];
+    if let NodeType::Element(elm) = &p_tag.node_type {
+      assert_eq!(&elm.tag_name, "p");
+      assert_eq!(&elm.attributes.len(), &0);
+    }
+
+    let text_node = &p_tag.children[0];
+    if let NodeType::Text(s) = &text_node.node_type {
+      assert_eq!(s, "Test");
     }
   }
 }

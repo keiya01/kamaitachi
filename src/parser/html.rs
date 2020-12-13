@@ -31,55 +31,94 @@ impl HTMLParser {
       if self.eof() || self.starts_with("</") {
         break;
       }
-      nodes.push(self.parse_node());
+      if let Some(node) = self.parse_node() {
+        nodes.push(node);
+      }
     }
     nodes
   }
 
-  fn parse_node(&mut self) -> Node {
+  fn parse_node(&mut self) -> Option<Node> {
     match self.next_char() {
       '<' => self.parse_element(),
       _ => self.parse_text(),
     }
   }
 
-  fn parse_text(&mut self) -> Node {
-    Node::new_text(self.consume_while(|c| c != '<'))
+  fn parse_text(&mut self) -> Option<Node> {
+    Some(Node::new_text(self.consume_while(|c| c != '<')))
   }
 
-  fn parse_element(&mut self) -> Node {
-    if self.consume_char() != '<' {
-      self.new_internal_error("Opening tag must start with '<'");
-    }
+  fn parse_element(&mut self) -> Option<Node> {
+    // Consumed character should be '<' in here.
+    self.consume_char();
 
     let tag_name = self.parse_tag_name();
     let attrs = self.parse_attributes();
+    println!("{}, {:?}", tag_name, attrs);
 
-    if self.consume_char() != '>' {
-      self.new_internal_error("Opening tag should end with '>'");
+    if self.eof() {
+      return Some(Node::new_element(tag_name, attrs, vec![]));
+    }
+
+    if self.next_char() != '>' {
+      self.consume_while(|c| c != '>');
+    } else {
+      self.consume_char();
     }
 
     let children = self.parse_nodes();
 
-    if self.consume_char() != '<' || self.consume_char() != '/' {
-      self.new_internal_error("Closing tag must start with '</'");
+    if self.eof() {
+      return Some(Node::new_element(tag_name, attrs, children));
+    }
+
+    if self.next_char() != '<' {
+      return Some(Node::new_element(tag_name, attrs, children));
+    } else {
+      self.consume_char();
+    }
+
+    if self.next_char() != '/' {
+      return Some(Node::new_element(tag_name, attrs, children));
+    } else {
+      self.consume_char();
     }
 
     if tag_name != self.parse_tag_name() {
-      self.new_internal_error(&format!("Closing tag name must be same with {}", tag_name));
+      return Some(Node::new_element(tag_name, attrs, children));
     }
 
-    if self.consume_char() != '>' {
-      self.new_internal_error("Closing tag should end with '>'");
+    if self.next_char() != '>' {
+      loop {
+        if self.eof() || self.next_char() == '<' {
+          break;
+        }
+        if self.next_char() == '>' {
+          self.consume_char();
+          break;
+        }
+        self.consume_char();
+      }
+    } else {
+      self.consume_char();
     }
 
-    Node::new_element(tag_name, attrs, children)
+    Some(Node::new_element(tag_name, attrs, children))
   }
 
   fn parse_attributes(&mut self) -> AttrMap {
     let mut attrs = HashMap::new();
     loop {
+      if self.eof() {
+        break;
+      }
       self.consume_whitespace();
+      if self.next_char() == '/' {
+        self.consume_char();
+        continue;
+      }
+
       if self.next_char() == '>' {
         break;
       }
@@ -90,23 +129,40 @@ impl HTMLParser {
   }
 
   fn parse_attr(&mut self) -> (String, String) {
-    let name = self.parse_tag_name();
-    if self.consume_char() != '=' {
-      self.new_internal_error("Attribute should has '=' keyword");
+    let name = self.consume_while(|c| match c {
+      '>' => false,
+      '=' => false,
+      c if c.is_whitespace() => false,
+      _ => true,
+    });
+    if self.next_char() != '=' {
+      return (name, "".into())
+    } else {
+      self.consume_char();
     }
     let val = self.parse_attr_value();
     (name, val)
   }
 
   fn parse_attr_value(&mut self) -> String {
-    let open_quote = self.consume_char();
-    if open_quote != '"' && open_quote != '\'' {
-      self.new_internal_error("Attribute should be wrapped with '\"' keyword");
+    let open_quote = self.next_char();
+    let is_quote = open_quote == '"' || open_quote == '\''; 
+    if is_quote {
+      self.consume_char();
     }
 
-    let val = self.consume_while(|c| c != open_quote);
-    if self.consume_char() != open_quote  {
-      self.new_internal_error("Attribute should be wrapped with '\"' keyword");
+    let val = self.consume_while(|c| {
+      if is_quote {
+        return c != open_quote;
+      }
+      if c == '>' || c.is_whitespace() {
+        return false;
+      }
+      return true;
+    });
+
+    if !self.eof() && is_quote {
+      self.consume_char();
     }
     val
   }
@@ -131,16 +187,13 @@ impl Parser for HTMLParser {
   fn set_pos(&mut self, next_pos: usize) {
     self.pos += next_pos;
   }
-
-  fn new_internal_error(&self, msg: &str) {
-    error::new_internal_error("HTML Parser", msg);
-  }
 }
 
 #[cfg(test)]
 mod test {
   use super::*;
   use crate::dom::*;
+
   #[test]
   fn test_parse_node() {
     let input = "
@@ -197,6 +250,144 @@ mod test {
     let text_node = &p_tag.children[0];
     if let NodeType::Text(s) = &text_node.node_type {
       assert_eq!(s, "Test");
+    }
+  }
+
+  /// https://html.spec.whatwg.org/multipage/parsing.html#parse-error-end-tag-with-attributes
+  #[test]
+  fn test_parse_end_tag_with_attributes() {
+    let input = "<body><div></div attr=\"test\"><p></p></body>";
+
+    let mut p = HTMLParser::new(input.into());
+
+    let body = p.run();
+    if let NodeType::Element(elm) = &body.children[0].node_type {
+      assert_eq!(&elm.tag_name, "div");
+      assert_eq!(&elm.attributes.len(), &0);
+    }
+
+    if let NodeType::Element(elm) = &body.children[1].node_type {
+      assert_eq!(&elm.tag_name, "p");
+      assert_eq!(&elm.attributes.len(), &0);
+    }
+  }
+
+  /// https://html.spec.whatwg.org/multipage/parsing.html#parse-error-end-tag-with-trailing-solidus
+  #[test]
+  fn test_parse_end_tag_with_trailing_solidus() {
+    let input = "<body><div></div/><p></p></body>";
+
+    let mut p = HTMLParser::new(input.into());
+
+    let body = p.run();
+    if let NodeType::Element(elm) = &body.children[0].node_type {
+      assert_eq!(&elm.tag_name, "div");
+      assert_eq!(&elm.attributes.len(), &0);
+    }
+
+    if let NodeType::Element(elm) = &body.children[1].node_type {
+      assert_eq!(&elm.tag_name, "p");
+      assert_eq!(&elm.attributes.len(), &0);
+    }
+  }
+
+  /// https://html.spec.whatwg.org/multipage/parsing.html#parse-error-missing-end-tag-name
+  #[test]
+  fn test_parse_missing_end_tag_name() {
+    let input = "<body><div></><p></p></body>";
+
+    let mut p = HTMLParser::new(input.into());
+
+    let body = p.run();
+    if let NodeType::Element(elm) = &body.children[0].node_type {
+      assert_eq!(&elm.tag_name, "div");
+      assert_eq!(&elm.attributes.len(), &0);
+    }
+    
+    if let NodeType::Element(elm) = &body.children[1].node_type {
+      assert_eq!(&elm.tag_name, "p");
+      assert_eq!(&elm.attributes.len(), &0);
+    }
+  }
+
+  #[test]
+  fn test_parse_missing_close() {
+    let input = "<body><div></div attr=\"test\" </body>";
+
+    let mut p = HTMLParser::new(input.into());
+
+    let body = p.run();
+    assert_eq!(&body.children.len(), &1);
+    if let NodeType::Element(elm) = &body.children[0].node_type {
+      assert_eq!(&elm.tag_name, "div");
+      assert_eq!(&elm.attributes.len(), &0);
+    }
+  }
+
+  /// https://html.spec.whatwg.org/multipage/parsing.html#parse-error-non-void-html-element-start-tag-with-trailing-solidus
+  #[test]
+  fn test_parse_non_void_html_element_start_tag_with_trailing_solidus() {
+    let input = "<body><div /><p></p><span></span></body>";
+
+    let mut p = HTMLParser::new(input.into());
+
+    let body = p.run();
+    let div = &body.children[0];
+    if let NodeType::Element(elm) = &div.node_type {
+      assert_eq!(&elm.tag_name, "div");
+      assert_eq!(&elm.attributes.len(), &0);
+    }
+
+    if let NodeType::Element(elm) = &div.children[0].node_type {
+      assert_eq!(&elm.tag_name, "p");
+      assert_eq!(&elm.attributes.len(), &0);
+    }
+
+    if let NodeType::Element(elm) = &div.children[1].node_type {
+      assert_eq!(&elm.tag_name, "span");
+      assert_eq!(&elm.attributes.len(), &0);
+    }
+  }
+
+  /// https://html.spec.whatwg.org/multipage/parsing.html#parse-error-unexpected-character-in-attribute-name
+  #[test]
+  fn test_parse_unexpected_character_in_attribute_name() {
+    let input = "<body><div foo<div><div id'bar'></div></body>";
+
+    let mut p = HTMLParser::new(input.into());
+
+    let body = p.run();
+    if let NodeType::Element(elm) = &body.children[0].node_type {
+      assert_eq!(&elm.tag_name, "div");
+      assert_eq!(&elm.attributes.len(), &1);
+      assert_eq!(&elm.attributes.get("foo<div").unwrap(), &"");
+    }
+
+    if let NodeType::Element(elm) = &body.children[1].node_type {
+      assert_eq!(&elm.tag_name, "div");
+      assert_eq!(&elm.attributes.len(), &1);
+      assert_eq!(&elm.attributes.get("id'bar'").unwrap(), &"");
+    }
+  }
+
+  /// https://html.spec.whatwg.org/multipage/parsing.html#parse-error-unexpected-character-in-unquoted-attribute-value
+  #[test]
+  fn test_parse_unexpected_character_in_unquoted_attribute_value() {
+    let input = "<body><div id=b'ar'></div><div id=\"></body>";
+
+    let mut p = HTMLParser::new(input.into());
+
+    let body = p.run();
+    if let NodeType::Element(elm) = &body.children[0].node_type {
+      assert_eq!(&elm.tag_name, "div");
+      assert_eq!(&elm.attributes.len(), &1);
+      assert_eq!(&elm.attributes.get("id").unwrap(), &"b'ar'");
+    }
+
+    if let NodeType::Element(elm) = &body.children[1].node_type {
+      assert_eq!(&elm.tag_name, "div");
+      assert_eq!(&elm.attributes.len(), &1);
+      assert_eq!(&elm.attributes.get("id").unwrap(), &"></body>");
     }
   }
 }

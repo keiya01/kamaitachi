@@ -1,4 +1,5 @@
 use crate::error;
+use super::Parser;
 
 pub struct Stylesheet {
   pub rules: Vec<Rule>,
@@ -86,14 +87,14 @@ impl Color {
   }
 }
 
-pub struct Parser {
+pub struct CSSParser {
   pos: usize,
   input: String,
 }
 
-impl Parser {
-  pub fn new(input: String) -> Parser {
-    Parser { pos: 0, input }
+impl CSSParser {
+  pub fn new(input: String) -> CSSParser {
+    CSSParser { pos: 0, input }
   }
 
   pub fn run(&mut self) -> Stylesheet {
@@ -249,34 +250,19 @@ impl Parser {
   fn parse_identifier(&mut self) -> String {
     self.consume_while(valid_identifier_char)
   }
+}
 
-  fn next_char(&self) -> char {
-    self.input[self.pos..].chars().next().unwrap()
+impl Parser for CSSParser {
+  fn input(&self) -> &str {
+    &self.input
   }
 
-  fn eof(&self) -> bool {
-    self.pos >= self.input.len()
+  fn pos(&self) -> usize {
+    self.pos
   }
 
-  fn consume_char(&mut self) -> char {
-    let mut iter = self.input[self.pos..].char_indices();
-    let (_, cur_char) = iter.next().unwrap();
-    let (next_pos, _) = iter.next().unwrap_or((1, ' '));
+  fn set_pos(&mut self, next_pos: usize) {
     self.pos += next_pos;
-    cur_char
-  }
-
-  fn consume_while<F>(&mut self, test: F) -> String
-      where F: Fn(char) -> bool {
-    let mut result = String::new();
-    while !self.eof() && test(self.next_char()) {
-      result.push(self.consume_char());
-    }
-    result
-  }
-
-  fn consume_whitespace(&mut self) {
-    self.consume_while(|c| c.is_whitespace());
   }
 
   fn new_internal_error(&self, msg: &str) {
@@ -307,7 +293,7 @@ h3 {
 }
 ";
 
-    let mut p = Parser::new(input.into());
+    let mut p = CSSParser::new(input.into());
 
     let stylesheet = p.run();
 
@@ -349,7 +335,7 @@ h3 {
   fn test_parse_class() {
     let input = "div.note { margin-bottom: 20px; padding: 5.5px; }";
 
-    let mut p = Parser::new(input.into());
+    let mut p = CSSParser::new(input.into());
 
     let stylesheet = p.run();
 
@@ -383,7 +369,7 @@ h3 {
   fn test_parse_id() {
     let input = "#answer { display: none; }";
 
-    let mut p = Parser::new(input.into());
+    let mut p = CSSParser::new(input.into());
 
     let stylesheet = p.run();
 

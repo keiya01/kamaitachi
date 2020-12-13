@@ -3,14 +3,16 @@ use std::collections::HashMap;
 use crate::dom::{Node, AttrMap};
 use crate::error;
 
-pub struct Parser {
+use super::Parser;
+
+pub struct HTMLParser {
   pos: usize,
   input: String,
 }
 
-impl Parser {
-  pub fn new(input: String) -> Parser {
-    Parser { pos: 0, input }
+impl HTMLParser {
+  pub fn new(input: String) -> HTMLParser {
+    HTMLParser { pos: 0, input }
   }
 
   pub fn run(&mut self) -> Node {
@@ -115,38 +117,19 @@ impl Parser {
       _ => false,
     })
   }
+}
 
-  fn next_char(&self) -> char {
-    self.input[self.pos..].chars().next().unwrap()
+impl Parser for HTMLParser {
+  fn input(&self) -> &str {
+    &self.input
   }
 
-  fn starts_with(&self, s: &str) -> bool {
-    self.input[self.pos..].starts_with(s)
+  fn pos(&self) -> usize {
+    self.pos
   }
 
-  fn eof(&self) -> bool {
-    self.pos >= self.input.len()
-  }
-
-  fn consume_char(&mut self) -> char {
-    let mut iter = self.input[self.pos..].char_indices();
-    let (_, cur_char) = iter.next().unwrap();
-    let (next_pos, _) = iter.next().unwrap_or((1, ' '));
+  fn set_pos(&mut self, next_pos: usize) {
     self.pos += next_pos;
-    cur_char
-  }
-
-  fn consume_while<F>(&mut self, test: F) -> String
-      where F: Fn(char) -> bool {
-    let mut result = String::new();
-    while !self.eof() && test(self.next_char()) {
-      result.push(self.consume_char());
-    }
-    result
-  }
-
-  fn consume_whitespace(&mut self) {
-    self.consume_while(|c| c.is_whitespace());
   }
 
   fn new_internal_error(&self, msg: &str) {
@@ -167,7 +150,7 @@ mod test {
 </div>
 ";
 
-    let mut p = Parser::new(input.into());
+    let mut p = HTMLParser::new(input.into());
 
     let div = p.run();
     if let NodeType::Element(elm) = div.node_type {

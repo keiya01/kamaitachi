@@ -66,6 +66,7 @@ pub enum Value {
   Keyword(String),
   Length(f32, Unit),
   ColorValue(Color),
+  None,
 }
 
 #[derive(Debug, PartialEq)]
@@ -128,7 +129,11 @@ impl CSSParser {
           self.consume_whitespace();
         },
         '{' => break,
-        c => self.new_internal_error(&format!("unexpected character {} in selector list", c)),
+        _ => {
+          self.consume_while(|c| c != '}');
+          self.consume_char();
+          selectors.pop();
+        },
       }
     }
     // Return selectors with highest specificity first, for use in matching.
@@ -163,13 +168,15 @@ impl CSSParser {
   }
 
   fn parse_declarations(&mut self) -> Vec<Declaration> {
-    if self.consume_char() != '{' {
-      self.new_internal_error("Declaration must be started with '{'");
-    }
+    // Declaration should be started with '{'.
+    self.consume_char();
 
     let mut declarations = vec![];
     loop {
       self.consume_whitespace();
+      if self.eof() {
+        break;
+      }
       if self.next_char() == '}' {
         self.consume_char();
         break;
@@ -184,16 +191,20 @@ impl CSSParser {
     let name = self.parse_identifier();
 
     self.consume_whitespace();
-    if self.consume_char() != ':' {
-      self.new_internal_error("The next character in the property must be ':'");
+    if !self.eof() && self.next_char() == ':' {
+      self.consume_char();
     }
     
     self.consume_whitespace();
+    if self.eof() {
+      return Declaration::new(name, Value::None);
+    }
+
     let value = self.parse_value();
 
     self.consume_whitespace();
-    if self.consume_char() != ';' {
-      self.new_internal_error("The property must be ended with ';'");
+    if !self.eof() && self.next_char() == ';' {
+      self.consume_char();
     }
 
     Declaration::new(name, value)
@@ -203,7 +214,11 @@ impl CSSParser {
     match self.next_char() {
       '0'..='9' => self.parse_length(),
       '#' => self.parse_color(),
-      _ => Value::Keyword(self.parse_identifier()),
+      c if valid_identifier_char(c) => Value::Keyword(self.parse_identifier()),
+      _ => {
+        self.consume_while(|c| c != '}');
+        Value::None
+      },
     }
   }
   
@@ -227,9 +242,8 @@ impl CSSParser {
   }
 
   fn parse_color(&mut self) -> Value {
-    if self.consume_char() != '#' {
-      self.new_internal_error("color value should be started with '#'");
-    }
+    // Color value should be started with '#'.
+    self.consume_char();
 
     Value::ColorValue(
       Color::new(
@@ -263,10 +277,6 @@ impl Parser for CSSParser {
 
   fn set_pos(&mut self, next_pos: usize) {
     self.pos += next_pos;
-  }
-
-  fn new_internal_error(&self, msg: &str) {
-    error::new_internal_error("CSS Parser", msg);
   }
 }
 
@@ -383,6 +393,113 @@ h3 {
       assert_eq!(&declaration.name, "display");
       if let Value::Keyword(keyword) = &declaration.value {
         assert_eq!(keyword, &"none");
+      } else {
+        panic!("declaration.value should has Keyword");
+      };
+    }
+  }
+
+  #[test]
+  fn test_parse_missing_start_bracket() {
+    let input = "
+#answer
+  display: none;
+}
+.class {
+  color: red;
+}";
+
+    let mut p = CSSParser::new(input.into());
+
+    let stylesheet = p.run();
+
+    for rule in stylesheet.rules {
+      let Selector::Simple(selector) = &rule.selectors[0];
+      assert_eq!(selector.tag_name, None);
+      assert_eq!(selector.id, None);
+      assert_eq!(&selector.class.len(), &1);
+      assert_eq!(&selector.class[0], &"class");
+
+      let declaration = &rule.declarations[0];
+      assert_eq!(&declaration.name, "color");
+      if let Value::Keyword(keyword) = &declaration.value {
+        assert_eq!(keyword, &"red");
+      } else {
+        panic!("declaration.value should has Keyword");
+      };
+    }
+  }
+
+  #[test]
+  fn test_parse_missing_end_bracket() {
+    let input = "
+.class {
+  color: red;
+h1 {}
+";
+
+    let mut p = CSSParser::new(input.into());
+
+    let stylesheet = p.run();
+    assert_eq!(&stylesheet.rules.len(), &1);
+    for rule in stylesheet.rules {
+      let Selector::Simple(selector) = &rule.selectors[0];
+      assert_eq!(selector.tag_name, None);
+      assert_eq!(selector.id, None);
+      assert_eq!(&selector.class.len(), &1);
+      assert_eq!(&selector.class[0], &"class");
+
+      let declaration = &rule.declarations[0];
+      assert_eq!(&declaration.name, "color");
+      if let Value::Keyword(keyword) = &declaration.value {
+        assert_eq!(keyword, &"red");
+      } else {
+        panic!("declaration.value should has Keyword");
+      };
+    }
+  }
+
+  #[test]
+  fn test_parse_missing_declaration_string() {
+    let input = "
+.class {
+  color: red
+  display: block;
+  height auto;
+}
+";
+
+    let mut p = CSSParser::new(input.into());
+
+    let stylesheet = p.run();
+    assert_eq!(&stylesheet.rules.len(), &1);
+    for rule in stylesheet.rules {
+      let Selector::Simple(selector) = &rule.selectors[0];
+      assert_eq!(selector.tag_name, None);
+      assert_eq!(selector.id, None);
+      assert_eq!(&selector.class.len(), &1);
+      assert_eq!(&selector.class[0], &"class");
+
+      let declaration = &rule.declarations[0];
+      assert_eq!(&declaration.name, "color");
+      if let Value::Keyword(keyword) = &declaration.value {
+        assert_eq!(keyword, &"red");
+      } else {
+        panic!("declaration.value should has Keyword");
+      };
+
+      let declaration = &rule.declarations[1];
+      assert_eq!(&declaration.name, "display");
+      if let Value::Keyword(keyword) = &declaration.value {
+        assert_eq!(keyword, &"block");
+      } else {
+        panic!("declaration.value should has Keyword");
+      };
+
+      let declaration = &rule.declarations[2];
+      assert_eq!(&declaration.name, "height");
+      if let Value::Keyword(keyword) = &declaration.value {
+        assert_eq!(keyword, &"auto");
       } else {
         panic!("declaration.value should has Keyword");
       };

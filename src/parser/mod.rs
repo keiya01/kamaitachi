@@ -40,6 +40,4 @@ trait Parser {
   fn consume_whitespace(&mut self) {
     self.consume_while(|c| c.is_whitespace());
   }
-
-  fn new_internal_error(&self, msg: &str);
 }

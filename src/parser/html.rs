@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 
 use crate::dom::{Node, AttrMap};
-use crate::error;
-
 use super::Parser;
 
 pub struct HTMLParser {

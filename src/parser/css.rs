@@ -1,4 +1,3 @@
-use crate::error;
 use super::Parser;
 
 pub struct Stylesheet {

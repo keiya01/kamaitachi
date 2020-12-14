@@ -59,6 +59,7 @@ impl Declaration {
   }
 }
 
+#[derive(Clone, Debug, PartialEq)]
 pub enum Value {
   Keyword(String),
   Length(f32, Unit),
@@ -66,12 +67,12 @@ pub enum Value {
   None,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Unit {
   Px,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Color {
   r: u8,
   g: u8,

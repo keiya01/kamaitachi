@@ -53,7 +53,6 @@ impl HTMLParser {
 
     let tag_name = self.parse_tag_name();
     let attrs = self.parse_attributes();
-    println!("{}, {:?}", tag_name, attrs);
 
     if self.eof() {
       return Some(Node::new_element(tag_name, attrs, vec![]));

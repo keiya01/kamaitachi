@@ -11,11 +11,27 @@ impl Stylesheet {
 pub struct Rule {
   pub selectors: Vec<Selector>,
   pub declarations: Vec<Declaration>,
+  pub level: Origin,
 }
 
 impl Rule {
-  pub fn new(selectors: Vec<Selector>, declarations: Vec<Declaration>) -> Rule {
-    Rule { selectors, declarations }
+  pub fn new(selectors: Vec<Selector>, declarations: Vec<Declaration>, level: Origin) -> Rule {
+    Rule { selectors, declarations, level }
+  }
+}
+
+#[derive(Clone, PartialEq)]
+pub enum Origin {
+  UA,
+  Author,
+}
+
+impl Origin {
+  pub fn to_index(&self) -> i8 {
+    match self {
+      Origin::UA => 0,
+      Origin::Author => 1,
+    }
   }
 }
 

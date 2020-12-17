@@ -35,7 +35,14 @@ fn specified_values(elm: &ElementData, stylesheet: &Stylesheet) -> PropertyMap {
   let mut values = HashMap::new();
   let mut rules = match_rules(elm, stylesheet);
   
-  rules.sort_by(|&(a, _), &(b, _)| a.cmp(&b));
+  rules.sort_by(
+    |&(specificity1, rule1), &(specificity2, rule2)| {
+      if rule1.level != rule2.level {
+        return rule1.level.to_index().cmp(&rule2.level.to_index());
+      }
+      specificity1.cmp(&specificity2)
+    }
+  );
   for (_, rule) in rules {
     for declaration in &rule.declarations {
       values.insert(declaration.name.clone(), declaration.value.clone());
@@ -122,7 +129,9 @@ div#foo {
     let mut css_parser = CSSParser::new(css.into());
 
     let dom = html_parser.run();
-    let cssom = css_parser.run();
+
+    let rules = css_parser.parse_rules(Origin::Author);
+    let cssom = Stylesheet::new(rules);
 
     let styled_node = create_style_tree(&dom, &cssom);
 
@@ -161,6 +170,103 @@ div#foo {
     assert_eq!(
       *div.specified_values.get("display").unwrap(),
       Value::Keyword("block".into()),
+    );
+    
+    let text = &div.children[0];
+    assert_eq!(
+      &text.specified_values.len(),
+      &0,
     );    
+  }
+
+  #[test]
+  fn test_cascade_level() {
+      let html = "
+<body class='bar'>
+  <div id='foo' class='baz'></div>
+</body>
+";
+    let ua_css = "
+div#foo.baz {
+  color: #cc0000;
+  margin: auto;
+}
+
+body {
+  display: block;
+  margin: 5px;
+}
+
+div {
+  display: block;
+  margin: 5px;
+}
+";
+
+    let author_css = "
+body {
+  margin: 0px;
+}
+
+.bar {
+  height: 100px;
+}
+
+div {
+  display: inline;
+}
+
+div#foo.baz {
+  color: red;
+}
+";
+
+    let mut html_parser = HTMLParser::new(html.into());
+    let mut ua_css_parser = CSSParser::new(ua_css.into());
+    let mut author_css_parser = CSSParser::new(author_css.into());
+
+    let dom = html_parser.run();
+
+    let ua_rules = ua_css_parser.parse_rules(Origin::UA);
+    let mut author_rules = author_css_parser.parse_rules(Origin::Author);
+
+    author_rules.extend(ua_rules);
+
+    let cssom = Stylesheet::new(author_rules);
+
+    let styled_node = create_style_tree(&dom, &cssom);
+
+    test_element(&styled_node.node.node_type, &"body");
+    assert_eq!(&styled_node.specified_values.len(), &3);
+    assert_eq!(
+      *styled_node.specified_values.get("display").unwrap(),
+      Value::Keyword("block".into()),
+    );
+    assert_eq!(
+      *styled_node.specified_values.get("margin").unwrap(),
+      Value::Length(0.0, Unit::Px),
+    );
+    assert_eq!(
+      *styled_node.specified_values.get("height").unwrap(),
+      Value::Length(100.0, Unit::Px),
+    );
+
+    assert_eq!(&styled_node.node.children.len(), &1);
+
+    let div = &styled_node.children[0];
+    test_element(&div.node.node_type, &"div");
+    assert_eq!(&div.specified_values.len(), &3);
+    assert_eq!(
+      *div.specified_values.get("color").unwrap(),
+      Value::Keyword("red".into()),
+    );
+    assert_eq!(
+      *div.specified_values.get("display").unwrap(),
+      Value::Keyword("inline".into()),
+    );
+    assert_eq!(
+      *div.specified_values.get("margin").unwrap(),
+      Value::Keyword("auto".into()),
+    );
   }
 }

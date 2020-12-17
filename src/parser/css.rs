@@ -11,24 +11,20 @@ impl CSSParser {
     CSSParser { pos: 0, input }
   }
 
-  pub fn run(&mut self) -> Stylesheet {
-    Stylesheet::new(self.parse_rules())
-  }
-
-  fn parse_rules(&mut self) -> Vec<Rule> {
+  pub fn parse_rules(&mut self, level: Origin) -> Vec<Rule> {
     let mut rules = vec![];
     loop {
       self.consume_whitespace();
       if self.eof() {
         break;
       }
-      rules.push(self.parse_rule());
+      rules.push(self.parse_rule(level.clone()));
     }
     rules
   }
 
-  fn parse_rule(&mut self) -> Rule {
-    Rule::new(self.parse_selectors(), self.parse_declarations())
+  fn parse_rule(&mut self, level: Origin) -> Rule {
+    Rule::new(self.parse_selectors(), self.parse_declarations(), level)
   }
 
   fn parse_selectors(&mut self) -> Vec<Selector> {
@@ -218,7 +214,8 @@ h3 {
 
     let mut p = CSSParser::new(input.into());
 
-    let stylesheet = p.run();
+    let rules = p.parse_rules(Origin::Author);
+    let stylesheet = Stylesheet::new(rules);
 
     for rule in stylesheet.rules {
       let Selector::Simple(selector) = &rule.selectors[0];
@@ -260,7 +257,8 @@ h3 {
 
     let mut p = CSSParser::new(input.into());
 
-    let stylesheet = p.run();
+    let rules = p.parse_rules(Origin::Author);
+    let stylesheet = Stylesheet::new(rules);
 
     for rule in stylesheet.rules {
       let Selector::Simple(selector) = &rule.selectors[0];
@@ -294,7 +292,8 @@ h3 {
 
     let mut p = CSSParser::new(input.into());
 
-    let stylesheet = p.run();
+    let rules = p.parse_rules(Origin::Author);
+    let stylesheet = Stylesheet::new(rules);
 
     for rule in stylesheet.rules {
       let Selector::Simple(selector) = &rule.selectors[0];
@@ -324,7 +323,8 @@ h3 {
 
     let mut p = CSSParser::new(input.into());
 
-    let stylesheet = p.run();
+    let rules = p.parse_rules(Origin::Author);
+    let stylesheet = Stylesheet::new(rules);
 
     for rule in stylesheet.rules {
       let Selector::Simple(selector) = &rule.selectors[0];
@@ -353,7 +353,9 @@ h1 {}
 
     let mut p = CSSParser::new(input.into());
 
-    let stylesheet = p.run();
+    let rules = p.parse_rules(Origin::Author);
+    let stylesheet = Stylesheet::new(rules);
+
     assert_eq!(&stylesheet.rules.len(), &1);
     for rule in stylesheet.rules {
       let Selector::Simple(selector) = &rule.selectors[0];
@@ -384,7 +386,9 @@ h1 {}
 
     let mut p = CSSParser::new(input.into());
 
-    let stylesheet = p.run();
+    let rules = p.parse_rules(Origin::Author);
+    let stylesheet = Stylesheet::new(rules);
+
     assert_eq!(&stylesheet.rules.len(), &1);
     for rule in stylesheet.rules {
       let Selector::Simple(selector) = &rule.selectors[0];

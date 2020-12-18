@@ -19,7 +19,7 @@ pub struct StyledNode<'a> {
   pub node: Rc<&'a Node>,
   pub specified_values: PropertyMap,
   pub children: Vec<StyledNode<'a>>,
-  pub parent: Option<Weak<&'a Node>>,
+  pub parent: Option<Weak<&'a Node>>, // used for inherit
 }
 
 impl<'a> StyledNode<'a> {

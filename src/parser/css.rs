@@ -76,9 +76,11 @@ impl CSSParser {
     selector
   }
 
-  fn parse_declarations(&mut self) -> Vec<Declaration> {
+  pub fn parse_declarations(&mut self) -> Vec<Declaration> {
     // Declaration should be started with '{'.
-    self.consume_char();
+    if self.next_char() == '{' {
+      self.consume_char();
+    }
 
     let mut declarations = vec![];
     loop {

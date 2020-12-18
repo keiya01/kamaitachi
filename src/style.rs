@@ -1,33 +1,39 @@
 use std::collections::HashMap;
+use std::rc::{Rc, Weak};
 
-use crate::{cssom, dom};
+use crate::{cssom, dom, parser};
 use dom::{Node, ElementData, NodeType};
 use cssom::*;
+use parser::css::CSSParser;
 
 // Map from CSS property names to values.
 type PropertyMap = HashMap<String, Value>;
 
 // A node with associated style data.
 pub struct StyledNode<'a> {
-  pub node: &'a Node,
+  pub node: Rc<&'a Node>,
   pub specified_values: PropertyMap,
   pub children: Vec<StyledNode<'a>>,
+  pub parent: Option<Weak<&'a Node>>,
 }
 
 impl<'a> StyledNode<'a> {
-  pub fn new(node: &'a Node, specified_values: PropertyMap, children: Vec<StyledNode<'a>>) -> StyledNode<'a> {
-    return StyledNode { node, specified_values, children }
+  pub fn new(node: Rc<&'a Node>, specified_values: PropertyMap, children: Vec<StyledNode<'a>>, parent: Option<Weak<&'a Node>>) -> StyledNode<'a> {
+    return StyledNode { node, specified_values, children, parent }
   }
 }
 
-pub fn create_style_tree<'a>(root: &'a Node, stylesheet: &'a Stylesheet) -> StyledNode<'a> {
+pub fn create_style_tree<'a>(root: Rc<&'a Node>, stylesheet: &'a Stylesheet, parent: Option<Weak<&'a Node>>) -> StyledNode<'a> {
   StyledNode::new(
-    root,
+    root.clone(),
     match &root.node_type {
       NodeType::Element(elm) => specified_values(elm, stylesheet),
       NodeType::Text(_) => HashMap::new(),
     },
-    root.children.iter().map(|node| create_style_tree(node, stylesheet)).collect(),
+    root.children.iter().map(|node| {
+      create_style_tree(Rc::new(node), stylesheet, Some(Rc::downgrade(&root)))
+    }).collect(),
+    parent,
   )
 }
 
@@ -48,6 +54,15 @@ fn specified_values(elm: &ElementData, stylesheet: &Stylesheet) -> PropertyMap {
       values.insert(declaration.name.clone(), declaration.value.clone());
     }
   }
+
+  if let Some(style) = elm.attributes.get("style") {
+    let mut p = CSSParser::new(style.clone());
+    let declarations = p.parse_declarations();
+    for declaration in declarations {
+      values.insert(declaration.name.clone(), declaration.value.clone());
+    }
+  }
+
   values
 }
 
@@ -133,7 +148,7 @@ div#foo {
     let rules = css_parser.parse_rules(Origin::Author);
     let cssom = Stylesheet::new(rules);
 
-    let styled_node = create_style_tree(&dom, &cssom);
+    let styled_node = create_style_tree(Rc::new(&dom), &cssom, None);
 
     test_element(&styled_node.node.node_type, &"body");
     assert_eq!(&styled_node.specified_values.len(), &1);
@@ -234,7 +249,7 @@ div#foo.baz {
 
     let cssom = Stylesheet::new(author_rules);
 
-    let styled_node = create_style_tree(&dom, &cssom);
+    let styled_node = create_style_tree(Rc::new(&dom), &cssom, None);
 
     test_element(&styled_node.node.node_type, &"body");
     assert_eq!(&styled_node.specified_values.len(), &3);
@@ -266,6 +281,58 @@ div#foo.baz {
     );
     assert_eq!(
       *div.specified_values.get("margin").unwrap(),
+      Value::Keyword("auto".into()),
+    );
+  }
+
+  #[test]
+  fn test_style_attr() {
+      let html = "
+<body>
+  <div id='foo' class='baz' style=\"color: green; display: block;\"></div>
+</body>
+";
+
+    let author_css = "
+div {
+  display: inline;
+}
+
+div#foo.baz {
+  color: red;
+  height: auto;
+}
+";
+
+    let mut html_parser = HTMLParser::new(html.into());
+    let mut css_parser = CSSParser::new(author_css.into());
+
+    let dom = html_parser.run();
+
+    let author_rules = css_parser.parse_rules(Origin::Author);
+
+    let cssom = Stylesheet::new(author_rules);
+
+    let styled_node = create_style_tree(Rc::new(&dom), &cssom, None);
+
+    test_element(&styled_node.node.node_type, &"body");
+    assert_eq!(&styled_node.specified_values.len(), &0);
+
+    assert_eq!(&styled_node.node.children.len(), &1);
+
+    let div = &styled_node.children[0];
+    test_element(&div.node.node_type, &"div");
+    assert_eq!(&div.specified_values.len(), &3);
+    assert_eq!(
+      *div.specified_values.get("color").unwrap(),
+      Value::Keyword("green".into()),
+    );
+    assert_eq!(
+      *div.specified_values.get("display").unwrap(),
+      Value::Keyword("block".into()),
+    );
+    assert_eq!(
+      *div.specified_values.get("height").unwrap(),
       Value::Keyword("auto".into()),
     );
   }

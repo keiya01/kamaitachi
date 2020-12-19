@@ -19,11 +19,11 @@ where
     B: Backend,
 {
   fn width(&self) -> Length {
-    Length::Fill
+    Length::Shrink
   }
 
   fn height(&self) -> Length {
-    Length::Fill
+    Length::Shrink
   }
 
   fn layout(

@@ -22,9 +22,35 @@ pub struct StyledNode<'a> {
   pub parent: Option<Weak<&'a Node>>, // used for inherit
 }
 
+pub enum Display {
+  Inline,
+  Block,
+  None,
+}
+
 impl<'a> StyledNode<'a> {
   pub fn new(node: Rc<&'a Node>, specified_values: PropertyMap, children: Vec<StyledNode<'a>>, parent: Option<Weak<&'a Node>>) -> StyledNode<'a> {
     return StyledNode { node, specified_values, children, parent }
+  }
+
+  pub fn value(&self, name: &str) -> Option<Value> {
+    self.specified_values.get(name).map(|v| v.clone())
+  }
+
+  pub fn display(&self) -> Display {
+    match self.value("display") {
+      Some(Value::Keyword(s)) => match &*s {
+        "block" => Display::Block,
+        "none" => Display::None,
+        _ => Display::Inline,
+      },
+      _ => Display::Inline,
+    }
+  }
+
+  pub fn lookup(&self, name: &str, fallback_name: &str, default: &Value) -> Value {
+    self.value(name).unwrap_or_else(|| self.value(fallback_name)
+                    .unwrap_or_else(|| default.clone()))
   }
 }
 

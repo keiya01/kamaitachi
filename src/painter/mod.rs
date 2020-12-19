@@ -1,8 +1,12 @@
+pub mod block;
+pub mod wrapper;
+
 use crate::cssom::{Color, Value};
 use crate::layout::{LayoutBox, Rect, BoxType};
 
 pub type DisplayList = Vec<DisplayCommand>;
 
+#[derive(Debug)]
 pub enum DisplayCommand {
   SolidColor(Color, Rect),
 }

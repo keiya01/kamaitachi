@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
+#[derive(Debug)]
 pub struct Node {
   pub children: Vec<Node>,
   pub node_type: NodeType,
@@ -20,6 +21,7 @@ impl Node {
   }
 }
 
+#[derive(Debug)]
 pub enum NodeType {
   Text(String),
   Element(ElementData),
@@ -27,6 +29,7 @@ pub enum NodeType {
 
 pub type AttrMap = HashMap<String, String>;
 
+#[derive(Debug)]
 pub struct ElementData {
   pub tag_name: String,
   pub attributes: AttrMap,

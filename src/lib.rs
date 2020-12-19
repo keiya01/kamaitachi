@@ -4,4 +4,5 @@ pub mod error;
 pub mod parser;
 pub mod style;
 pub mod layout;
-pub mod painting;
+pub mod painter;
+pub mod window;

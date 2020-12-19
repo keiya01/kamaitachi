@@ -5,7 +5,7 @@ use crate::cssom::{Value, Unit};
 
 // CSS box model. All sizes are in px.
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct Dimensions {
   pub content: Rect,
 
@@ -28,7 +28,7 @@ impl Dimensions {
   }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug, Clone)]
 pub struct Rect {
   pub x: f32,
   pub y: f32,
@@ -41,13 +41,13 @@ impl Rect {
     Rect {
       x: self.x - edge.left,
       y: self.y - edge.top,
-      width: self.width - edge.left - edge.right,
-      height: self.height - edge.top - edge.bottom,
+      width: self.width + edge.left + edge.right,
+      height: self.height + edge.top + edge.bottom,
     }
   }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct EdgeSizes {
   pub left: f32,
   pub right: f32,
@@ -55,6 +55,7 @@ pub struct EdgeSizes {
   pub bottom: f32,
 }
 
+#[derive(Debug)]
 pub struct LayoutBox<'a> {
   pub dimensions: Rc<RefCell<Dimensions>>,
   pub box_type: BoxType<'a>,
@@ -232,6 +233,7 @@ impl<'a> LayoutBox<'a> {
   }
 }
 
+#[derive(Debug)]
 pub enum BoxType<'a> {
   BlockNode(&'a StyledNode<'a>),
   InlineNode(&'a StyledNode<'a>),

@@ -161,7 +161,7 @@ impl CSSParser {
         self.parse_hex_pair(),
         self.parse_hex_pair(),
         self.parse_hex_pair(),
-        255
+        1.0
       )
     )
   }
@@ -246,7 +246,7 @@ h3 {
       let declaration = &rule.declarations[1];
       assert_eq!(&declaration.name, "color");
       if let Value::ColorValue(color) = &declaration.value {
-        assert_eq!(color, &Color::new(204, 0, 0, 255));
+        assert_eq!(color, &Color::new(204, 0, 0, 1.0));
       } else {
         panic!("declaration.value should has ColorValue");
       };

@@ -15,6 +15,7 @@ use parser::css::CSSParser;
 type PropertyMap = HashMap<String, Value>;
 
 // A node with associated style data.
+#[derive(Debug)]
 pub struct StyledNode<'a> {
   pub node: Rc<&'a Node>,
   pub specified_values: PropertyMap,
@@ -211,7 +212,7 @@ div#foo {
     assert_eq!(&div.specified_values.len(), &2);
     assert_eq!(
       *div.specified_values.get("color").unwrap(),
-      Value::ColorValue(Color::new(204, 0, 0, 255)),
+      Value::ColorValue(Color::new(204, 0, 0, 1.0)),
     );
     assert_eq!(
       *div.specified_values.get("display").unwrap(),

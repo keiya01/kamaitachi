@@ -78,6 +78,10 @@ fn prepare() -> DisplayList {
     }
   }
 
+  paint(html, css_list)
+}
+
+fn paint(html: String, css_list: Vec<String>) -> DisplayList {
   let dom = HTMLParser::new(html).run();
   let mut author_rules = vec![];
 

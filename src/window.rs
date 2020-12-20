@@ -14,6 +14,7 @@ use crate::style::create_style_tree;
 use crate::layout::{Dimensions, layout_tree};
 use crate::painter::{build_display_list, DisplayList, DisplayCommand};
 use crate::painter::block::Block;
+use crate::painter::text::Text;
 use crate::painter::wrapper::Wrapper;
 
 #[derive(Debug)]
@@ -44,6 +45,9 @@ impl<'a> Sandbox for Window {
     for item in &self.items {
       wrapper.items.push(match item {
         DisplayCommand::SolidColor(color, rect) => Block::new(color.clone(), rect.clone()),
+        DisplayCommand::Text(text, color, rect) => {
+          Text::new(text.into(), color.clone(), rect.clone())
+        },
       });
     }
 

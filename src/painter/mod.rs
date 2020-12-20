@@ -1,7 +1,9 @@
 pub mod block;
+pub mod text;
 pub mod wrapper;
 
 use crate::cssom::{Color, Value};
+use crate::dom::{NodeType};
 use crate::layout::{LayoutBox, Rect, BoxType};
 
 pub type DisplayList = Vec<DisplayCommand>;
@@ -9,6 +11,7 @@ pub type DisplayList = Vec<DisplayCommand>;
 #[derive(Debug)]
 pub enum DisplayCommand {
   SolidColor(Color, Rect),
+  Text(String, Color, Rect),
 }
 
 pub fn build_display_list(layout_root: &LayoutBox) -> DisplayList {
@@ -20,7 +23,7 @@ pub fn build_display_list(layout_root: &LayoutBox) -> DisplayList {
 fn render_layout_box(list: &mut DisplayList, layout_box: &LayoutBox) {
   render_background(list, layout_box);
   render_borders(list, layout_box);
-  // TODO: render text
+  render_text(list, layout_box);
 
   for child in &layout_box.children {
     render_layout_box(list, child);
@@ -73,6 +76,22 @@ fn render_borders(list: &mut DisplayList, layout_box: &LayoutBox) {
     width: border_box.width,
     height: d.border.bottom,
   }));
+}
+
+fn render_text(list: &mut DisplayList, layout_box: &LayoutBox) {
+  let styled_node = match layout_box.box_type {
+    BoxType::BlockNode(node) => node,
+    BoxType::InlineNode(node) => node,
+    BoxType::AnonymousBlock => return,
+  };
+
+  let text = match &(*styled_node.node).node_type {
+    NodeType::Text(text) => text,
+    NodeType::Element(_) => return,
+  };
+
+  let color = get_color(layout_box, "color").unwrap_or(Color::new(0, 0, 0, 1.0));
+  list.push(DisplayCommand::Text(text.into(), color, layout_box.dimensions.borrow().content.clone()))
 }
 
 fn get_color(layout_box: &LayoutBox, name: &str) -> Option<Color> {

@@ -2,6 +2,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use crate::style::*;
 use crate::cssom::{Value, Unit};
+use crate::dom::{NodeType};
 
 // CSS box model. All sizes are in px.
 
@@ -47,7 +48,7 @@ impl Rect {
   }
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct EdgeSizes {
   pub left: f32,
   pub right: f32,
@@ -81,8 +82,18 @@ impl<'a> LayoutBox<'a> {
   pub fn layout(&mut self, containing_block: Rc<RefCell<Dimensions>>) {
     match self.box_type {
       BoxType::BlockNode(_) => self.layout_block(containing_block),
-      BoxType::InlineNode(_) => {}, // TODO
-      BoxType::AnonymousBlock => {}, // TODO,
+      BoxType::InlineNode(_) => self.layout_inline(containing_block),
+      BoxType::AnonymousBlock => {
+        {
+          let mut d = self.dimensions.borrow_mut();
+          let containing_block = containing_block.borrow();
+          d.content.x = containing_block.content.x;
+          d.content.y = containing_block.content.y;
+          d.content.height = containing_block.content.height;
+          d.content.width = containing_block.content.width;
+        }
+        self.layout_block_children();
+      },
     }
   }
 
@@ -98,6 +109,35 @@ impl<'a> LayoutBox<'a> {
     // Parent height is affected by child layout,
     // so parent height need to be calculated after children are laid out.
     self.calculate_block_height();
+  }
+
+  fn layout_inline(&mut self, containing_block: Rc<RefCell<Dimensions>>) {
+    let style = self.get_style_node();
+
+    let default = Value::Length(16.0, Unit::Px);
+    
+    if let NodeType::Text(text) = &style.node.node_type {
+      let size = style.value("font-size").unwrap_or(default.clone()).to_px();
+      let size = Value::Length(
+        size * text.trim().chars().count() as f32,
+        Unit::Px
+      );
+      let mut d = self.dimensions.borrow_mut();
+      d.content.width = size.to_px();
+    } else {
+      self.calculate_block_width(containing_block.clone());
+    };
+
+    self.calculate_block_position(containing_block);
+    
+    self.layout_block_children();
+
+    if let NodeType::Text(_) = &style.node.node_type {
+      let size = style.value("font-size").unwrap_or(default).to_px();
+      self.dimensions.borrow_mut().content.height = size;
+    } else {
+      self.calculate_block_height();
+    }
   }
 
   fn calculate_block_width(&mut self, containing_block: Rc<RefCell<Dimensions>>) {

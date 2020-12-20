@@ -9,7 +9,7 @@ pub struct Block;
 impl Block {
   pub fn new(color: Color, rect: Rect) -> Primitive {
     Primitive::Quad {
-      bounds: Rectangle::new(Point::new(rect.x, rect.x), Size::new(rect.width, rect.height)),
+      bounds: Rectangle::new(Point::new(rect.x, rect.y), Size::new(rect.width, rect.height)),
       background: Background::Color(GraphicsColor::from_rgba8(
         color.r,
         color.g,

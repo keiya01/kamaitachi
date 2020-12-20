@@ -206,10 +206,10 @@ impl<'a> LayoutBox<'a> {
   fn layout_block_children(&mut self) {
     let parent_dimensions = &self.dimensions;
     for child in &mut self.children {
-      child.layout(self.dimensions.clone());
+      child.layout(parent_dimensions.clone());
       let mut d = parent_dimensions.borrow_mut();
       let child_d = child.dimensions.borrow();
-      d.content.height = d.content.height + child_d.margin_box().height;
+      d.content.height += child_d.margin_box().height;
     }
   }
 

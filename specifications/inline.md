@@ -50,14 +50,14 @@ CSS3: https://drafts.csswg.org/css-inline-3/
 
 もしそうでないなら、`inline box`は分割され、複数行にわたって配置される。これらの一行一行が`line box`であり、今回のケースでは2つの`line box`に分割されていることになる。
 
-*Several emphasized words appear*
-*in this sentence, dear.*
+*Several emphasized words appear*  
+*in this sentence, dear.*  
 
 または次のようになる。
 
-*Several emphasized*
-*words appear in this*
-*sentence, dear.*
+*Several emphasized*  
+*words appear in this*  
+*sentence, dear.*  
 
 上記の例では、`EM box`が2つに分割されている(これらを`split1`, `split2`と呼ぶ)。
 `margins`, `borders`, `padding`, または`text decorations`は`split1`の後または`split2`の前で視覚的な変化を起こさない。

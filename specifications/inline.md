@@ -90,3 +90,107 @@ CSS3: https://drafts.csswg.org/css-inline-3/
 - `servo/font-kit`の[Font::metrics(&self)](https://docs.rs/font-kit/0.10.0/font_kit/loaders/freetype/struct.Font.html#method.metrics)を使えば、`ascendent`と`descendent`を求められそう。
   - `iced`の実装例(https://github.com/hecrj/iced/blob/master/graphics/src/font/source.rs)
 - またここで取得したfontデータは直接`iced_native::Text`に渡したい
+
+### Calculating inline width
+
+- `inline box`のユーザー定義の`width`は適用されない
+- `margin-right`と`margin-left`の値は`0`になる
+
+## Servo Code Reading
+
+path: `servo/components/line.rs`
+
+### Line Struct
+
+```rs
+pub struct Line {
+    pub range: Range<FragmentIndex>,
+    pub visual_runs: Option<Vec<(Range<FragmentIndex>, bidi::Level)>>, // TODO: for bidirectional
+    pub bounds: LogicalRect<Au>, 
+    pub green_zone: LogicalSize<Au>, // TODO: for float
+    pub minimum_metrics: LineMetrics,
+    pub metrics: LineMetrics,
+}
+```
+
+- `Line` structは1つの`line box`を表している
+- つまり、1つの`line box`のための改行の情報やwidthやheightなどのmetricsの情報を含みそれをもとに一行ごとのinline boxを表示していく
+  
+#### range field
+
+type: `Range<FragmentIndex>`
+
+```rs
+pub struct Range<I> {
+    begin: I,
+    length: I,
+}
+``` 
+
+```rs
+int_range_index! {
+    #[derive(Serialize)]
+    #[doc = "The index of a fragment in a flattened vector of DOM elements."]
+    struct FragmentIndex(isize)
+}
+```
+
+- `FragmentIndex`はmacroでラップされている。このmacroではいろいろなtraitを実装しているが基本的な操作はstructから値を簡単に取り出せるようにしていたり、他のstructと足し合わせるような処理をしている。
+- `range` fieldでは、改行の位置を示している。つまり`line box`がどこまでなのかを示すために使われる。
+
+### bounds field
+
+```rs
+pub struct LogicalRect<T> {
+    pub start: LogicalPoint<T>,
+    pub size: LogicalSize<T>,
+    debug_writing_mode: DebugWritingMode,
+}
+```
+
+```rs
+pub struct LogicalPoint<T> {
+    /// inline-axis coordinate
+    pub i: T,
+    /// block-axis coordinate
+    pub b: T,
+    debug_writing_mode: DebugWritingMode,
+}
+```
+
+```rs
+pub struct LogicalSize<T> {
+    pub inline: T, // inline-size, a.k.a. logical width, a.k.a. measure
+    pub block: T,  // block-size, a.k.a. logical height, a.k.a. extent
+    debug_writing_mode: DebugWritingMode,
+}
+```
+
+- `LogicalPoint`は`line box`の正確なpositionを保持する
+- `LogicalSize`は`line box`の拡張されたwidthやheightを保持する
+  - 例えば、一つの`line box`上に画像などの大きい要素がはい位置された場合、高さはその高さに合わせられる
+  - heightを`block`、widthを`inline`と呼ぶ
+
+### minimum_metrics field
+
+```rs
+pub struct LineMetrics {
+    pub space_above_baseline: Au,
+    pub space_below_baseline: Au,
+}
+```
+
+- これはstyleによって指定された`line-height`やfontに関するvisual情報を保持する
+
+### metrics field
+
+```rs
+pub struct LineMetrics { ... }
+```
+
+- これは実際に計算された`line-height`やfontに関するvisual情報を保持する
+
+### Inline Flow
+
+- `impl LineBreaker`の`reflow_fragment`で改行周りの処理やpositionの計算をしている
+- `fragment`に各nodeが入っていて、そのノードを分割して、InlineFlow.linesに入れている

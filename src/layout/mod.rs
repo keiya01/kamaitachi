@@ -1,8 +1,11 @@
+mod font;
+
 use std::rc::Rc;
 use std::cell::RefCell;
 use crate::style::*;
 use crate::cssom::{Value, Unit};
 use crate::dom::{NodeType};
+use font::Font;
 
 // CSS box model. All sizes are in px.
 
@@ -75,7 +78,7 @@ impl<'a> LayoutBox<'a> {
   fn get_style_node(&self) -> &'a StyledNode<'a> {
     match self.box_type {
       BoxType::BlockNode(node) | BoxType::InlineNode(node) => node,
-      BoxType::AnonymousBlock => panic!("Anonymous block box has no style node"),
+      BoxType::AnonymousBlock | BoxType::AnonymousInline => panic!("Anonymous block box has no style node"),
     }
   }
 
@@ -89,11 +92,18 @@ impl<'a> LayoutBox<'a> {
           let containing_block = containing_block.borrow();
           d.content.x = containing_block.content.x;
           d.content.y = containing_block.content.y;
-          d.content.height = containing_block.content.height;
-          d.content.width = containing_block.content.width;
         }
         self.layout_block_children();
       },
+      BoxType::AnonymousInline => {
+        {
+          let mut d = self.dimensions.borrow_mut();
+          let containing_block = containing_block.borrow();
+          d.content.x = containing_block.content.x;
+          d.content.y = containing_block.content.y;
+        }
+        self.layout_block_children();
+      }
     }
   }
 
@@ -114,30 +124,33 @@ impl<'a> LayoutBox<'a> {
   fn layout_inline(&mut self, containing_block: Rc<RefCell<Dimensions>>) {
     let style = self.get_style_node();
 
-    let default = Value::Length(16.0, Unit::Px);
-    
-    if let NodeType::Text(text) = &style.node.node_type {
-      let size = style.value("font-size").unwrap_or(default.clone()).to_px();
-      let size = Value::Length(
-        size * text.trim().chars().count() as f32,
-        Unit::Px
-      );
-      let mut d = self.dimensions.borrow_mut();
-      d.content.width = size.to_px();
-    } else {
-      self.calculate_block_width(containing_block.clone());
+    match &style.node.node_type {
+      NodeType::Text(text) => {
+        let font = Font::new(None);
+        {
+          let mut d = self.dimensions.borrow_mut();
+          d.content.width = font.width(text, style.font_size());
+          let line_height = style.line_height();
+          // TODO: calculate leading
+          // let (above_baseline, under_baseline) = font.height(line_height
+          d.content.height = line_height;
+        }
+      }
+      NodeType::Element(_) => {
+        self.calculate_block_width(containing_block.clone());
+     }
     };
 
     self.calculate_block_position(containing_block);
     
     self.layout_block_children();
 
-    if let NodeType::Text(_) = &style.node.node_type {
-      let size = style.value("font-size").unwrap_or(default).to_px();
-      self.dimensions.borrow_mut().content.height = size;
-    } else {
-      self.calculate_block_height();
-    }
+    match &style.node.node_type {
+      NodeType::Text(_) => {},
+      NodeType::Element(_) => {
+        self.calculate_block_height();
+      }
+    };
   }
 
   fn calculate_block_width(&mut self, containing_block: Rc<RefCell<Dimensions>>) {
@@ -219,6 +232,74 @@ impl<'a> LayoutBox<'a> {
     d.border.right = border_right.to_px();
   }
 
+  fn calculate_inline_width(&mut self, containing_block: Rc<RefCell<Dimensions>>) {
+    let style = self.get_style_node();
+
+    // `width` has initial value `auto`.
+    let auto = Value::Keyword("auto".into());
+
+    let width = self.dimensions.borrow().content.width;
+
+    // `margin`, `border`, `padding` has initial value `0`.
+    let zero = Value::Length(0.0, Unit::Px);
+
+    let mut margin_left = style.lookup("margin-left", "margin", &zero);
+    let mut margin_right = style.lookup("margin-right", "margin", &zero);
+
+    let border_left = style.lookup("border-left-width", "border", &zero);
+    let border_right = style.lookup("border-right-width", "border", &zero);
+
+    let padding_left = style.lookup("padding-left", "padding", &zero);
+    let padding_right = style.lookup("padding-right", "padding", &zero);
+
+    let total: f32 = [
+      margin_left.to_px(), margin_right.to_px(),
+      border_left.to_px(), border_right.to_px(),
+      padding_left.to_px(), padding_right.to_px(),
+      width,
+    ].iter().sum();
+
+    let containing_block = containing_block.borrow();
+
+    if total > containing_block.content.width {
+      if margin_left == auto {
+        margin_left = Value::Length(0.0, Unit::Px);
+      }
+      if margin_right == auto {
+        margin_right = Value::Length(0.0, Unit::Px);
+      }
+    }
+
+    let underflow = containing_block.content.width - total;
+
+    match (margin_left == auto, margin_right == auto) {
+      (false, false) => {
+        margin_right = Value::Length(margin_right.to_px() + underflow, Unit::Px);
+      }
+      (false, true) => {
+        margin_right = Value::Length(underflow, Unit::Px);
+      }
+      (true, false) => {
+        margin_left = Value::Length(underflow, Unit::Px);
+      }
+      (true, true) => {
+        margin_left = Value::Length(underflow / 2.0, Unit::Px);
+        margin_right = Value::Length(underflow / 2.0, Unit::Px);
+      }
+    }
+
+    let mut d = self.dimensions.borrow_mut();
+
+    d.margin.left = margin_left.to_px();
+    d.margin.right = margin_right.to_px();
+    
+    d.padding.left = padding_left.to_px();
+    d.padding.right = padding_right.to_px();
+
+    d.border.left = border_left.to_px();
+    d.border.right = border_right.to_px();
+  }
+
   fn calculate_block_position(&mut self, containing_block: Rc<RefCell<Dimensions>>) {
     let style = self.get_style_node();
     let mut d = self.dimensions.borrow_mut();
@@ -253,6 +334,13 @@ impl<'a> LayoutBox<'a> {
     }
   }
 
+  fn layout_inline_children(&mut self) {
+    let parent_dimensions = &self.dimensions;
+    for child in &mut self.children {
+      child.layout(parent_dimensions.clone());
+    }
+  }
+
   fn calculate_block_height(&mut self) {
     if let Some(Value::Length(height, Unit::Px)) = self.get_style_node().value("height") {
       self.dimensions.borrow_mut().content.height = height;
@@ -261,7 +349,13 @@ impl<'a> LayoutBox<'a> {
 
   fn get_inline_container(&mut self) -> &mut LayoutBox<'a> {
     match self.box_type {
-      BoxType::InlineNode(_) | BoxType::AnonymousBlock => self,
+      BoxType::InlineNode(_) => {
+        match self.children.last() {
+          Some(&LayoutBox { box_type: BoxType::AnonymousInline, .. }) => {},
+          _ => self.children.push(LayoutBox::new(BoxType::AnonymousInline)),
+        };
+        self.children.last_mut().unwrap()
+      },
       BoxType::BlockNode(_) => {
         match self.children.last() {
           Some(&LayoutBox { box_type: BoxType::AnonymousBlock, .. }) => {},
@@ -269,6 +363,7 @@ impl<'a> LayoutBox<'a> {
         };
         self.children.last_mut().unwrap()
       },
+      _ => self,
     }
   }
 }
@@ -278,6 +373,7 @@ pub enum BoxType<'a> {
   BlockNode(&'a StyledNode<'a>),
   InlineNode(&'a StyledNode<'a>),
   AnonymousBlock,
+  AnonymousInline,
 }
 
 pub fn layout_tree<'a>(node: &'a StyledNode<'a>, containing_block: Rc<RefCell<Dimensions>>) -> LayoutBox<'a> {
@@ -300,7 +396,7 @@ pub fn build_layout_tree<'a>(style_node: &'a StyledNode<'a>) -> LayoutBox<'a> {
   for child in &style_node.children {
     match child.display() {
       Display::Block => root.children.push(build_layout_tree(child)),
-      // TODO: Support the case where inline include block element(https://www.w3.org/TR/CSS2/visuren.html#box-gen) 
+      // TODO: Support the case where inline include block element(https://www.w3.org/TR/CSS22/visuren.html#box-gen) 
       Display::Inline => root.get_inline_container().children.push(build_layout_tree(child)),
       Display::None => {}
     }

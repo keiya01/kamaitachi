@@ -82,7 +82,7 @@ fn render_text(list: &mut DisplayList, layout_box: &LayoutBox) {
   let styled_node = match layout_box.box_type {
     BoxType::BlockNode(node) => node,
     BoxType::InlineNode(node) => node,
-    BoxType::AnonymousBlock => return,
+    BoxType::AnonymousBlock | BoxType::AnonymousInline => return,
   };
 
   let text = match &(*styled_node.node).node_type {
@@ -100,6 +100,6 @@ fn get_color(layout_box: &LayoutBox, name: &str) -> Option<Color> {
       Some(Value::ColorValue(color)) => Some(color),
       _ => None,
     },
-    BoxType::AnonymousBlock => None,
+    BoxType::AnonymousBlock | BoxType::AnonymousInline => None,
   }
 }

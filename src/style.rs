@@ -53,6 +53,17 @@ impl<'a> StyledNode<'a> {
     self.value(name).unwrap_or_else(|| self.value(fallback_name)
                     .unwrap_or_else(|| default.clone()))
   }
+
+  pub fn font_size(&self) -> f32 {
+    let default_font_size = Value::Length(16.0, Unit::Px);
+    self.value("font-size").unwrap_or(default_font_size.clone()).to_px()
+  }
+
+  pub fn line_height(&self) -> f32 {
+    let default_line_height = Value::Number(1.2);
+    let line_height = self.value("line-height").unwrap_or(default_line_height.clone()).to_px();
+    self.font_size() * line_height
+  }
 }
 
 pub fn create_style_tree<'a>(root: Rc<&'a Node>, stylesheet: &'a Stylesheet, parent: Option<Weak<&'a Node>>) -> StyledNode<'a> {

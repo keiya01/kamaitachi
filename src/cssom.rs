@@ -79,6 +79,7 @@ impl Declaration {
 pub enum Value {
   Keyword(String),
   Length(f32, Unit),
+  Number(f32),
   ColorValue(Color),
   None,
 }
@@ -87,6 +88,7 @@ impl Value {
   pub fn to_px(&self) -> f32 {
     match *self {
       Value::Length(f, Unit::Px) => f,
+      Value::Number(f) => f,
       _ => 0.0
     }
   }

@@ -134,7 +134,13 @@ impl CSSParser {
   }
   
   fn parse_length(&mut self) -> Value {
-    Value::Length(self.parse_float(), self.parse_unit())
+    let float = self.parse_float();
+    self.consume_whitespace();
+    if self.next_char() == ';' {
+      self.consume_char();
+      return Value::Number(float);
+    }
+    Value::Length(float, self.parse_unit())
   }
 
   fn parse_float(&mut self) -> f32 {

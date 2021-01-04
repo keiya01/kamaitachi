@@ -1,15 +1,17 @@
-mod font;
+pub mod font;
+mod inline;
 
 use std::rc::Rc;
 use std::cell::RefCell;
+use std::mem;
 use crate::style::*;
 use crate::cssom::{Value, Unit};
 use crate::dom::{NodeType};
-use font::Font;
+use inline::InlineBox;
 
 // CSS box model. All sizes are in px.
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct Dimensions {
   pub content: Rect,
 
@@ -59,7 +61,7 @@ pub struct EdgeSizes {
   pub bottom: f32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LayoutBox<'a> {
   pub dimensions: Rc<RefCell<Dimensions>>,
   pub box_type: BoxType<'a>,
@@ -76,16 +78,16 @@ impl<'a> LayoutBox<'a> {
   }
 
   fn get_style_node(&self) -> &'a StyledNode<'a> {
-    match self.box_type {
+    match &self.box_type {
       BoxType::BlockNode(node) | BoxType::InlineNode(node) => node,
-      BoxType::AnonymousBlock | BoxType::AnonymousInline => panic!("Anonymous block box has no style node"),
+      BoxType::TextNode(node) => node.styled_node,
+      BoxType::AnonymousBlock => panic!("Anonymous block box has no style node"),
     }
   }
 
   pub fn layout(&mut self, containing_block: Rc<RefCell<Dimensions>>) {
     match self.box_type {
       BoxType::BlockNode(_) => self.layout_block(containing_block),
-      BoxType::InlineNode(_) => self.layout_inline(containing_block),
       BoxType::AnonymousBlock => {
         {
           let mut d = self.dimensions.borrow_mut();
@@ -93,17 +95,16 @@ impl<'a> LayoutBox<'a> {
           d.content.x = containing_block.content.x;
           d.content.y = containing_block.content.y;
         }
-        self.layout_block_children();
+        // Anonymous block is including only inline box in children
+        let mut inline_box = InlineBox::new(self.clone(), mem::replace(&mut self.children, Vec::new()));
+        inline_box.layout();
+        let mut d = self.dimensions.borrow_mut();
+        d.content.width = inline_box.width;
+        d.content.height = inline_box.height;
+        self.children = inline_box.boxes;
       },
-      BoxType::AnonymousInline => {
-        {
-          let mut d = self.dimensions.borrow_mut();
-          let containing_block = containing_block.borrow();
-          d.content.x = containing_block.content.x;
-          d.content.y = containing_block.content.y;
-        }
-        self.layout_block_children();
-      }
+      // All inline node and text node are contained in anonymous box.
+      BoxType::InlineNode(_) | BoxType::TextNode(_) => unreachable!(),
     }
   }
 
@@ -119,38 +120,6 @@ impl<'a> LayoutBox<'a> {
     // Parent height is affected by child layout,
     // so parent height need to be calculated after children are laid out.
     self.calculate_block_height();
-  }
-
-  fn layout_inline(&mut self, containing_block: Rc<RefCell<Dimensions>>) {
-    let style = self.get_style_node();
-
-    match &style.node.node_type {
-      NodeType::Text(text) => {
-        let font = Font::new(None);
-        {
-          let mut d = self.dimensions.borrow_mut();
-          d.content.width = font.width(text, style.font_size());
-          let line_height = style.line_height();
-          // TODO: calculate leading
-          // let (above_baseline, under_baseline) = font.height(line_height
-          d.content.height = line_height;
-        }
-      }
-      NodeType::Element(_) => {
-        self.calculate_block_width(containing_block.clone());
-     }
-    };
-
-    self.calculate_block_position(containing_block);
-    
-    self.layout_block_children();
-
-    match &style.node.node_type {
-      NodeType::Text(_) => {},
-      NodeType::Element(_) => {
-        self.calculate_block_height();
-      }
-    };
   }
 
   fn calculate_block_width(&mut self, containing_block: Rc<RefCell<Dimensions>>) {
@@ -232,74 +201,6 @@ impl<'a> LayoutBox<'a> {
     d.border.right = border_right.to_px();
   }
 
-  fn calculate_inline_width(&mut self, containing_block: Rc<RefCell<Dimensions>>) {
-    let style = self.get_style_node();
-
-    // `width` has initial value `auto`.
-    let auto = Value::Keyword("auto".into());
-
-    let width = self.dimensions.borrow().content.width;
-
-    // `margin`, `border`, `padding` has initial value `0`.
-    let zero = Value::Length(0.0, Unit::Px);
-
-    let mut margin_left = style.lookup("margin-left", "margin", &zero);
-    let mut margin_right = style.lookup("margin-right", "margin", &zero);
-
-    let border_left = style.lookup("border-left-width", "border", &zero);
-    let border_right = style.lookup("border-right-width", "border", &zero);
-
-    let padding_left = style.lookup("padding-left", "padding", &zero);
-    let padding_right = style.lookup("padding-right", "padding", &zero);
-
-    let total: f32 = [
-      margin_left.to_px(), margin_right.to_px(),
-      border_left.to_px(), border_right.to_px(),
-      padding_left.to_px(), padding_right.to_px(),
-      width,
-    ].iter().sum();
-
-    let containing_block = containing_block.borrow();
-
-    if total > containing_block.content.width {
-      if margin_left == auto {
-        margin_left = Value::Length(0.0, Unit::Px);
-      }
-      if margin_right == auto {
-        margin_right = Value::Length(0.0, Unit::Px);
-      }
-    }
-
-    let underflow = containing_block.content.width - total;
-
-    match (margin_left == auto, margin_right == auto) {
-      (false, false) => {
-        margin_right = Value::Length(margin_right.to_px() + underflow, Unit::Px);
-      }
-      (false, true) => {
-        margin_right = Value::Length(underflow, Unit::Px);
-      }
-      (true, false) => {
-        margin_left = Value::Length(underflow, Unit::Px);
-      }
-      (true, true) => {
-        margin_left = Value::Length(underflow / 2.0, Unit::Px);
-        margin_right = Value::Length(underflow / 2.0, Unit::Px);
-      }
-    }
-
-    let mut d = self.dimensions.borrow_mut();
-
-    d.margin.left = margin_left.to_px();
-    d.margin.right = margin_right.to_px();
-    
-    d.padding.left = padding_left.to_px();
-    d.padding.right = padding_right.to_px();
-
-    d.border.left = border_left.to_px();
-    d.border.right = border_right.to_px();
-  }
-
   fn calculate_block_position(&mut self, containing_block: Rc<RefCell<Dimensions>>) {
     let style = self.get_style_node();
     let mut d = self.dimensions.borrow_mut();
@@ -334,28 +235,16 @@ impl<'a> LayoutBox<'a> {
     }
   }
 
-  fn layout_inline_children(&mut self) {
-    let parent_dimensions = &self.dimensions;
-    for child in &mut self.children {
-      child.layout(parent_dimensions.clone());
-    }
-  }
-
   fn calculate_block_height(&mut self) {
     if let Some(Value::Length(height, Unit::Px)) = self.get_style_node().value("height") {
       self.dimensions.borrow_mut().content.height = height;
     }
   }
 
+  /// When a anonymous box has some node, this node will be placed horizontally.
   fn get_inline_container(&mut self) -> &mut LayoutBox<'a> {
     match self.box_type {
-      BoxType::InlineNode(_) => {
-        match self.children.last() {
-          Some(&LayoutBox { box_type: BoxType::AnonymousInline, .. }) => {},
-          _ => self.children.push(LayoutBox::new(BoxType::AnonymousInline)),
-        };
-        self.children.last_mut().unwrap()
-      },
+      BoxType::TextNode(_) | BoxType::InlineNode(_) | BoxType::AnonymousBlock => self,
       BoxType::BlockNode(_) => {
         match self.children.last() {
           Some(&LayoutBox { box_type: BoxType::AnonymousBlock, .. }) => {},
@@ -363,17 +252,32 @@ impl<'a> LayoutBox<'a> {
         };
         self.children.last_mut().unwrap()
       },
-      _ => self,
     }
   }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum BoxType<'a> {
   BlockNode(&'a StyledNode<'a>),
   InlineNode(&'a StyledNode<'a>),
+  TextNode(TextNode<'a>),
   AnonymousBlock,
-  AnonymousInline,
+}
+
+#[derive(Debug, Clone)]
+pub struct TextNode<'a> {
+  pub styled_node: &'a StyledNode<'a>,
+  pub font: font::Font,
+}
+
+impl<'a> TextNode<'a> {
+  fn new(styled_node: &'a StyledNode<'a>) -> TextNode<'a> {
+    let font = font::Font::new(None, styled_node.font_size());
+    TextNode {
+      styled_node,
+      font,
+    }
+  }
 }
 
 pub fn layout_tree<'a>(node: &'a StyledNode<'a>, containing_block: Rc<RefCell<Dimensions>>) -> LayoutBox<'a> {
@@ -389,14 +293,18 @@ pub fn layout_tree<'a>(node: &'a StyledNode<'a>, containing_block: Rc<RefCell<Di
 pub fn build_layout_tree<'a>(style_node: &'a StyledNode<'a>) -> LayoutBox<'a> {
   let mut root = LayoutBox::new(match style_node.display() {
     Display::Block => BoxType::BlockNode(style_node),
-    Display::Inline => BoxType::InlineNode(style_node),
+    Display::Inline => {
+      match style_node.node.node_type {
+        NodeType::Element(_) => BoxType::InlineNode(style_node),
+        NodeType::Text(_) => BoxType::TextNode(TextNode::new(style_node)),
+      }
+    }
     Display::None => panic!("Root node must has `display: none;`."),
   });
 
   for child in &style_node.children {
     match child.display() {
       Display::Block => root.children.push(build_layout_tree(child)),
-      // TODO: Support the case where inline include block element(https://www.w3.org/TR/CSS22/visuren.html#box-gen) 
       Display::Inline => root.get_inline_container().children.push(build_layout_tree(child)),
       Display::None => {}
     }

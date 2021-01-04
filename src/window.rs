@@ -45,8 +45,8 @@ impl<'a> Sandbox for Window {
     for item in &self.items {
       wrapper.items.push(match item {
         DisplayCommand::SolidColor(color, rect) => Block::new(color.clone(), rect.clone()),
-        DisplayCommand::Text(text, color, rect) => {
-          Text::new(text.into(), color.clone(), rect.clone())
+        DisplayCommand::Text(text, color, rect, font) => {
+          Text::new(text.into(), color.clone(), rect.clone(), font.clone())
         },
       });
     }
@@ -98,8 +98,8 @@ fn paint(html: String, css_list: Vec<String>) -> DisplayList {
   let styled_node = create_style_tree(Rc::new(&dom), &cssom, None);
 
   let mut viewport: Dimensions = Default::default();
-  viewport.content.width  = 800.0;
-  viewport.content.height = 600.0;
+  viewport.content.width  = 1200.0;
+  viewport.content.height = 800.0;
 
   let layout_root = layout_tree(&styled_node, Rc::new(RefCell::new(viewport)));
 
@@ -125,5 +125,7 @@ fn visit_dirs(dir: &Path, paths: &mut Vec<PathBuf>) -> io::Result<()> {
 }
 
 pub fn main() -> iced::Result {
-  Window::run(Settings::default())
+  let mut settings = Settings::default();
+  settings.window.size = (1200, 800);
+  Window::run(settings)
 }

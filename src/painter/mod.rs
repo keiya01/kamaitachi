@@ -4,14 +4,14 @@ pub mod wrapper;
 
 use crate::cssom::{Color, Value};
 use crate::dom::{NodeType};
-use crate::layout::{LayoutBox, Rect, BoxType};
+use crate::layout::{LayoutBox, Rect, BoxType, font};
 
 pub type DisplayList = Vec<DisplayCommand>;
 
 #[derive(Debug)]
 pub enum DisplayCommand {
   SolidColor(Color, Rect),
-  Text(String, Color, Rect),
+  Text(String, Color, Rect, font::Font),
 }
 
 pub fn build_display_list(layout_root: &LayoutBox) -> DisplayList {
@@ -79,27 +79,30 @@ fn render_borders(list: &mut DisplayList, layout_box: &LayoutBox) {
 }
 
 fn render_text(list: &mut DisplayList, layout_box: &LayoutBox) {
-  let styled_node = match layout_box.box_type {
-    BoxType::BlockNode(node) => node,
-    BoxType::InlineNode(node) => node,
-    BoxType::AnonymousBlock | BoxType::AnonymousInline => return,
+  let node = match &layout_box.box_type {
+    BoxType::TextNode(node) => node,
+    _ => return,
   };
 
-  let text = match &(*styled_node.node).node_type {
+  let text = match &(*node.styled_node.node).node_type {
     NodeType::Text(text) => text,
-    NodeType::Element(_) => return,
+    _ => unreachable!(),
   };
 
   let color = get_color(layout_box, "color").unwrap_or(Color::new(0, 0, 0, 1.0));
-  list.push(DisplayCommand::Text(text.into(), color, layout_box.dimensions.borrow().content.clone()))
+  list.push(DisplayCommand::Text(text.into(), color, layout_box.dimensions.borrow().content.clone(), node.font.clone()))
 }
 
 fn get_color(layout_box: &LayoutBox, name: &str) -> Option<Color> {
-  match layout_box.box_type {
+  match &layout_box.box_type {
     BoxType::BlockNode(node) | BoxType::InlineNode(node) => match node.value(name){
       Some(Value::ColorValue(color)) => Some(color),
       _ => None,
     },
-    BoxType::AnonymousBlock | BoxType::AnonymousInline => None,
+    BoxType::TextNode(node) => match node.styled_node.value(name){
+      Some(Value::ColorValue(color)) => Some(color),
+      _ => None,
+    },
+    BoxType::AnonymousBlock => None,
   }
 }

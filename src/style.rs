@@ -29,6 +29,13 @@ pub enum Display {
   None,
 }
 
+const XX_LARGE: f32 = 2.5;
+const X_LARGE: f32 = 1.8;
+const LARGE: f32 = 1.5;
+const MEDIUM: f32 = 1.3;
+const SMALL: f32 = 1.1;
+const X_SMALL: f32 = 1.;
+
 impl<'a> StyledNode<'a> {
   pub fn new(node: Rc<&'a Node>, specified_values: PropertyMap, children: Vec<StyledNode<'a>>, parent: Option<Weak<&'a Node>>) -> StyledNode<'a> {
     return StyledNode { node, specified_values, children, parent }
@@ -54,9 +61,30 @@ impl<'a> StyledNode<'a> {
                     .unwrap_or_else(|| default.clone()))
   }
 
+  fn get_scale_factor(&self) -> f32 {
+    let mut scale_factor = MEDIUM;
+    if let Some(parent) = &self.parent {
+      let elm = if let NodeType::Element(elm) = &parent.upgrade().unwrap().node_type {
+        elm
+      } else {
+        unreachable!();
+      };
+      scale_factor = match &*elm.tag_name {
+        "h1" => XX_LARGE,
+        "h2" => X_LARGE,
+        "h3" => LARGE,
+        "h4" => MEDIUM,
+        "h5" => SMALL,
+        "h6" => X_SMALL,
+        _ => MEDIUM,
+      };
+    }
+    scale_factor
+  }
+
   pub fn font_size(&self) -> f32 {
     let default_font_size = Value::Length(16.0, Unit::Px);
-    self.value("font-size").unwrap_or(default_font_size.clone()).to_px()
+    self.value("font-size").unwrap_or(default_font_size.clone()).to_px() * self.get_scale_factor()
   }
 
   pub fn line_height(&self) -> f32 {

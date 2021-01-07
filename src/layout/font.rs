@@ -1,32 +1,51 @@
+pub use font_kit::family_name::FamilyName;
+pub use font_kit::handle::Handle;
+
 use font_kit::source::SystemSource;
 use font_kit::properties::Properties;
 use font_kit::font;
-pub use font_kit::family_name::FamilyName;
-pub use font_kit::handle::Handle;
+
+use crate::style::StyledNode;
 
 #[derive(Debug, Clone)]
 pub struct Font {
   pub ascent: f32,
   pub descent: f32,
-  font: font::Font,
+  pub font: font::Font,
   pub size: f32,
+}
+
+fn px_to_pt(px: f64) -> f64 {
+  px / 96. * 72.
+}
+
+fn pt_to_px(pt: f64) -> f64 {
+  pt / 72. * 96.
 }
 
 impl Font {
   // TODO: specify property. ex: `font-weight`, `font-style`, etc
   pub fn new(font_families: Option<&[FamilyName]>, size: f32) -> Font {
-    let font = match font_families {
-      Some(font_families) => {
-        SystemSource::new().select_best_match(font_families, &Properties::new())
-          .unwrap()
-          .load()
-          .unwrap()
-      },
-      None => load_default_font_family(),
-    };
-    let metrics = font.metrics();
+    let font = load_font_family(font_families);
 
-    Font { font, ascent: metrics.ascent, descent: metrics.descent, size }
+    let ctfont = font.native_font();
+    let ctfont = ctfont.clone_with_font_size(size as f64);
+    let ascent = ctfont.ascent() as f64;
+    let descent = ctfont.descent() as f64;
+
+    let scale = px_to_pt(ctfont.pt_size() as f64) / (ascent + descent);
+
+    Font {
+      font,
+      ascent: pt_to_px(ascent * scale) as f32,
+      descent: pt_to_px(descent * scale) as f32,
+      size
+    }
+  }
+
+  // TODO: cache font data
+  pub fn new_from_style(style: &StyledNode) -> Font {
+    Font::new(style.font_family(), style.font_size())
   }
 
   fn leading(&self, line_height: f32) -> f32 {
@@ -61,6 +80,18 @@ impl Font {
 
   pub fn get_static_font_family(&self) -> &'static str {
     Box::leak(self.font.family_name().into_boxed_str())
+  }
+}
+
+fn load_font_family(font_families: Option<&[FamilyName]>) -> font::Font {
+  match font_families {
+    Some(font_families) => {
+      SystemSource::new().select_best_match(font_families, &Properties::new())
+        .unwrap()
+        .load()
+        .unwrap()
+    },
+    None => load_default_font_family(),
   }
 }
 

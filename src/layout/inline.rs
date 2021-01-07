@@ -3,6 +3,7 @@ use std::collections::{VecDeque};
 use std::ops::Range;
 use super::{Dimensions, Rect, LayoutBox, BoxType, TextNode};
 use crate::dom::{NodeType};
+use super::font::{Font};
 use crate::cssom::{Value, Unit};
 
 #[derive(Clone)]
@@ -10,11 +11,12 @@ struct Line {
   range: Range<usize>,
   bounds: Dimensions,
   green_zone: Rect,
+  metrics: LineMetrics,
 }
 
 impl Line {
   pub fn new(bounds: Dimensions) -> Line {
-    Line { range: 0..0, bounds, green_zone: Default::default() }
+    Line { range: 0..0, bounds, green_zone: Default::default(), metrics: LineMetrics::new() }
   }
 }
 
@@ -74,19 +76,23 @@ impl<'a> LineBreaker<'a> {
 
     match &layout_box.box_type {
       BoxType::InlineNode(node) => {
-        // TODO: height, cur_height, max_width, width, margin, padding, border
+        if layout_box.children.len() == 0 {
+          return;
+        }
+
+        let style = layout_box.get_style_node();
+
         for child in &layout_box.children {
           self.layout(root, child);
         }
 
-        let mut total_width = 0.0;
-        let mut max_height = 0.0;
+        // TODO: support nested element
+        let mut total_width = 0.;
         for child in &layout_box.children {
           let mut d = child.dimensions.borrow_mut();
           let margin_box = d.margin_box();
           d.content.x = total_width;
           total_width += margin_box.width;
-          max_height = margin_box.height.max(max_height);
           self.work_list.pop_back();
           self.pending_line.range.end -= 1;
         }
@@ -114,7 +120,7 @@ impl<'a> LineBreaker<'a> {
         d.border.left = border_left.to_px();
         d.border.right = border_right.to_px();
 
-        d.content.height = max_height;
+        d.content.height = Font::new_from_style(&style).ascent;
 
         let margin_top = node.lookup("margin-top", "margin", &zero);
         let margin_bottom = node.lookup("margin-bottom", "margin", &zero);
@@ -138,10 +144,11 @@ impl<'a> LineBreaker<'a> {
       BoxType::TextNode(node) => {
         let mut d = layout_box.dimensions.borrow_mut();
         d.content.width = self.text_width(&node);
-        // TODO: calculate leading
-        // let (above_baseline, under_baseline) = font.height(line_height)
-        d.content.height = node.styled_node.line_height();
+        let metrics = self.pending_line.metrics.calc_space(node, node.styled_node.line_height());
+        d.content.height = node.font.ascent + node.font.descent;
         self.work_list.push_back(layout_box.clone());
+        // Maybe, this calculation is specific case for `iced`
+        d.content.y -= metrics.leading / 2.;
       },
       BoxType::BlockNode(_) => unimplemented!(),
       _ => unreachable!(),
@@ -199,39 +206,75 @@ impl<'a> InlineBox<'a> {
     self.height = line_breaker.cur_height;
   }
 
-  fn recursive_position(&self, layout_box: &mut LayoutBox<'a>, additional_x: f32, additional_y: f32) {
+  fn recursive_position(&self, layout_box: &mut LayoutBox<'a>, additional_rect_x: f32, additional_rect_y: f32) {
     for child in &mut layout_box.children {
       if let BoxType::InlineNode(_) = child.box_type {
-        self.recursive_position(child, additional_x, additional_y);
+        self.recursive_position(child, additional_rect_x, additional_rect_y);
       }
       let mut d = child.dimensions.borrow_mut();
-      d.content.x += additional_x;
-      d.content.y += additional_y;
+
+      d.content.x += additional_rect_x;
+      d.content.y += additional_rect_y;
     }
   }
 
   fn assign_position(&self, line_breaker: &mut LineBreaker<'a>) {
     for line in &line_breaker.lines {
       let mut line_box_x = line.bounds.content.x;
-      let mut line_box_height = 0.;
       for item in &mut line_breaker.new_boxes[line.range.clone()] {
+        let new_rect_y = line.bounds.content.y + line.metrics.leading;
         {
           let mut d = item.dimensions.borrow_mut();
           d.content.x = line_box_x;
-          d.content.y = line.bounds.content.y;
+          d.content.y += new_rect_y;
         }
         if let BoxType::InlineNode(_) = item.box_type {
-          self.recursive_position(item, line_box_x, line.bounds.content.y);
+          self.recursive_position(item, line_box_x, new_rect_y);
         }
         let d = item.dimensions.borrow();
         let margin_box = d.margin_box();
         let line_box_width = margin_box.width;
         line_box_x += line_box_width;
         line_breaker.max_width = line_box_width.max(line_breaker.max_width);
-        line_box_height = margin_box.height.max(line_box_height);
       }
-      line_breaker.cur_height += line_box_height;
+      line_breaker.cur_height += line.metrics.space_above_baseline + line.metrics.space_under_baseline;
     }
+  }
+}
+
+#[derive(Debug, Clone)]
+struct LineMetrics {
+  space_above_baseline: f32,
+  space_under_baseline: f32,
+  ascent: f32,
+  leading: f32,
+}
+
+impl LineMetrics {
+  fn new() -> LineMetrics {
+    LineMetrics { space_above_baseline: 0., space_under_baseline: 0., ascent: 0., leading: 0.}
+  }
+
+  fn new_from_style(space_above_baseline: f32, space_under_baseline: f32, ascent: f32, leading: f32) -> LineMetrics {
+    LineMetrics { space_above_baseline, space_under_baseline, ascent, leading}
+  }
+
+  fn calc_space(&mut self, text_node: &TextNode, line_height: f32) -> LineMetrics {
+    let font_metrics = &text_node.font;
+    let ascent = font_metrics.ascent;
+    let descent = font_metrics.descent;
+    let leading = line_height - (ascent + descent);
+    
+    let half_leading = leading / 2.;
+    let space_above_baseline = ascent + half_leading;
+    let space_under_baseline = descent + leading - half_leading;
+
+    self.space_above_baseline = self.space_above_baseline.max(space_above_baseline);
+    self.space_under_baseline = self.space_under_baseline.max(space_under_baseline);
+    self.ascent = self.ascent.max(ascent);
+    self.leading = self.leading.max(leading);
+
+    LineMetrics::new_from_style(space_above_baseline, space_under_baseline, ascent, leading)
   }
 }
 

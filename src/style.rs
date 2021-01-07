@@ -6,10 +6,11 @@
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 
-use crate::{cssom, dom, parser};
+use crate::{cssom, dom, parser, layout};
 use dom::{Node, ElementData, NodeType};
 use cssom::*;
 use parser::css::CSSParser;
+use layout::font::FamilyName;
 
 // Map from CSS property names to values.
 type PropertyMap = HashMap<String, Value>;
@@ -61,30 +62,13 @@ impl<'a> StyledNode<'a> {
                     .unwrap_or_else(|| default.clone()))
   }
 
-  fn get_scale_factor(&self) -> f32 {
-    let mut scale_factor = MEDIUM;
-    if let Some(parent) = &self.parent {
-      let elm = if let NodeType::Element(elm) = &parent.upgrade().unwrap().node_type {
-        elm
-      } else {
-        unreachable!();
-      };
-      scale_factor = match &*elm.tag_name {
-        "h1" => XX_LARGE,
-        "h2" => X_LARGE,
-        "h3" => LARGE,
-        "h4" => MEDIUM,
-        "h5" => SMALL,
-        "h6" => X_SMALL,
-        _ => MEDIUM,
-      };
-    }
-    scale_factor
+  pub fn font_family(&self) -> Option<&[FamilyName]> {
+    Some(&[FamilyName::SansSerif, FamilyName::Serif])
   }
 
   pub fn font_size(&self) -> f32 {
     let default_font_size = Value::Length(16.0, Unit::Px);
-    self.value("font-size").unwrap_or(default_font_size.clone()).to_px() * self.get_scale_factor()
+    self.value("font-size").unwrap_or(default_font_size.clone()).to_px() * MEDIUM
   }
 
   pub fn line_height(&self) -> f32 {

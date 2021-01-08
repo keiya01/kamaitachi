@@ -277,14 +277,3 @@ impl LineMetrics {
     LineMetrics::new_from_style(space_above_baseline, space_under_baseline, ascent, leading)
   }
 }
-
-impl<'a> LayoutBox<'a> {
-  /// Block box should be processed as a line box in inline layout process,
-  /// but block box is treated as a line box.
-  fn can_split(&self) -> bool {
-    match self.box_type {
-      BoxType::TextNode(_) => true,
-      _ => false,
-    }
-  }
-}

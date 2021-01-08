@@ -76,17 +76,12 @@ impl<'a> LineBreaker<'a> {
 
     match &layout_box.box_type {
       BoxType::InlineNode(node) => {
-        if layout_box.children.len() == 0 {
-          return;
-        }
-
         let style = layout_box.get_style_node();
 
         for child in &layout_box.children {
           self.layout(root, child);
         }
 
-        // TODO: support nested element
         let mut total_width = 0.;
         for child in &layout_box.children {
           let mut d = child.dimensions.borrow_mut();
@@ -207,11 +202,15 @@ impl<'a> InlineBox<'a> {
   }
 
   fn recursive_position(&self, layout_box: &mut LayoutBox<'a>, additional_rect_x: f32, additional_rect_y: f32) {
+    let mut new_rect_x = additional_rect_x;
     for child in &mut layout_box.children {
       if let BoxType::InlineNode(_) = child.box_type {
-        self.recursive_position(child, additional_rect_x, additional_rect_y);
+        self.recursive_position(child, new_rect_x, additional_rect_y);
       }
+
       let mut d = child.dimensions.borrow_mut();
+
+      new_rect_x += d.margin_box().width;
 
       d.content.x += additional_rect_x;
       d.content.y += additional_rect_y;
@@ -225,7 +224,7 @@ impl<'a> InlineBox<'a> {
         let new_rect_y = line.bounds.content.y + line.metrics.leading;
         {
           let mut d = item.dimensions.borrow_mut();
-          d.content.x = line_box_x;
+          d.content.x += line_box_x;
           d.content.y += new_rect_y;
         }
         if let BoxType::InlineNode(_) = item.box_type {

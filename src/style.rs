@@ -4,7 +4,7 @@
 // - [ ] Initial
 
 use std::collections::HashMap;
-use std::rc::{Rc, Weak};
+use std::rc::{Rc};
 
 use crate::{cssom, dom, parser, layout};
 use dom::{Node, ElementData, NodeType};
@@ -21,7 +21,6 @@ pub struct StyledNode<'a> {
   pub node: Rc<&'a Node>,
   pub specified_values: PropertyMap,
   pub children: Vec<StyledNode<'a>>,
-  pub parent: Option<Weak<&'a Node>>, // used for inherit
 }
 
 pub enum Display {
@@ -37,9 +36,11 @@ const MEDIUM: f32 = 1.3;
 const SMALL: f32 = 1.1;
 const X_SMALL: f32 = 1.;
 
+const INHERITABLE_PROPERTY_LIST: [&str; 3] = ["font-size", "color", "line-height"];
+
 impl<'a> StyledNode<'a> {
-  pub fn new(node: Rc<&'a Node>, specified_values: PropertyMap, children: Vec<StyledNode<'a>>, parent: Option<Weak<&'a Node>>) -> StyledNode<'a> {
-    return StyledNode { node, specified_values, children, parent }
+  pub fn new(node: Rc<&'a Node>, specified_values: PropertyMap, children: Vec<StyledNode<'a>>) -> StyledNode<'a> {
+    return StyledNode { node, specified_values, children }
   }
 
   pub fn value(&self, name: &str) -> Option<Value> {
@@ -78,22 +79,27 @@ impl<'a> StyledNode<'a> {
   }
 }
 
-pub fn create_style_tree<'a>(root: Rc<&'a Node>, stylesheet: &'a Stylesheet, parent: Option<Weak<&'a Node>>) -> StyledNode<'a> {
+pub fn create_style_tree<'a>(root: Rc<&'a Node>, stylesheet: &'a Stylesheet, inherited_specified_values: Option<PropertyMap>) -> StyledNode<'a> {
+  let inherited_specified_values = inherited_specified_values.unwrap_or(HashMap::new());
+  let root_specified_values = match &root.node_type {
+    NodeType::Element(elm) => specified_values(elm, stylesheet, inherited_specified_values),
+    NodeType::Text(_) => inherited_specified_values,
+  };
+
+  let new_inherited_specified_values: PropertyMap = root_specified_values.iter()
+    .filter(|(k, _)| INHERITABLE_PROPERTY_LIST.contains(&k.as_str()))
+    .map(|(k, v)| (k.clone(), v.clone())).collect();
   StyledNode::new(
     root.clone(),
-    match &root.node_type {
-      NodeType::Element(elm) => specified_values(elm, stylesheet),
-      NodeType::Text(_) => HashMap::new(),
-    },
+    root_specified_values,
     root.children.iter().map(|node| {
-      create_style_tree(Rc::new(node), stylesheet, Some(Rc::downgrade(&root)))
+      create_style_tree(Rc::new(node), stylesheet, Some(new_inherited_specified_values.clone()))
     }).collect(),
-    parent,
   )
 }
 
-fn specified_values(elm: &ElementData, stylesheet: &Stylesheet) -> PropertyMap {
-  let mut values = HashMap::new();
+fn specified_values(elm: &ElementData, stylesheet: &Stylesheet, inherited_specified_values: PropertyMap) -> PropertyMap {
+  let mut values = inherited_specified_values;
   let mut rules = match_rules(elm, stylesheet);
   
   rules.sort_by(
@@ -166,6 +172,14 @@ mod tests {
       assert_eq!(&elm.tag_name, expected);
     } else {
       panic!("node should has Element");
+    }
+  }
+
+  fn test_text(node_type: &NodeType, expected: &str) {
+    if let NodeType::Text(text) = node_type {
+      assert_eq!(text.as_str(), expected);
+    } else {
+      panic!("node should has Text");
     }
   }
 
@@ -245,7 +259,7 @@ div#foo {
     let text = &div.children[0];
     assert_eq!(
       &text.specified_values.len(),
-      &0,
+      &1,
     );    
   }
 
@@ -389,6 +403,79 @@ div#foo.baz {
     assert_eq!(
       *div.specified_values.get("height").unwrap(),
       Value::Keyword("auto".into()),
+    );
+  }
+
+  #[test]
+  fn test_inheritance() {
+      let html = "
+<body>
+  <div class='foo'>
+    <p class='bar'>test</p>
+  </div>
+</body>
+";
+
+    let author_css = "
+.foo {
+  color: green;
+}
+
+.bar {
+  font-size: 16px;
+}
+";
+
+    let mut html_parser = HTMLParser::new(html.into());
+    let mut css_parser = CSSParser::new(author_css.into());
+
+    let dom = html_parser.run();
+
+    let author_rules = css_parser.parse_rules(Origin::Author);
+
+    let cssom = Stylesheet::new(author_rules);
+
+    let styled_node = create_style_tree(Rc::new(&dom), &cssom, None);
+
+    test_element(&styled_node.node.node_type, &"body");
+    assert_eq!(&styled_node.specified_values.len(), &0);
+
+    assert_eq!(&styled_node.node.children.len(), &1);
+
+    let div = &styled_node.children[0];
+    test_element(&div.node.node_type, &"div");
+    assert_eq!(&div.specified_values.len(), &1);
+    assert_eq!(
+      *div.specified_values.get("color").unwrap(),
+      Value::Keyword("green".into()),
+    );
+
+    assert_eq!(&div.children.len(), &1);
+
+    let p = &div.children[0];
+    test_element(&p.node.node_type, &"p");
+    assert_eq!(&p.specified_values.len(), &2);
+    assert_eq!(
+      *p.specified_values.get("color").unwrap(),
+      Value::Keyword("green".into()),
+    );
+    assert_eq!(
+      *p.specified_values.get("font-size").unwrap(),
+      Value::Length(16.0, Unit::Px),
+    );
+
+    assert_eq!(&p.children.len(), &1);
+
+    let text = &p.children[0];
+    test_text(&text.node.node_type, &"test");
+    assert_eq!(&text.specified_values.len(), &2);
+    assert_eq!(
+      *text.specified_values.get("color").unwrap(),
+      Value::Keyword("green".into()),
+    );
+    assert_eq!(
+      *text.specified_values.get("font-size").unwrap(),
+      Value::Length(16.0, Unit::Px),
     );
   }
 }

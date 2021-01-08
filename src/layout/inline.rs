@@ -68,7 +68,7 @@ impl<'a> LineBreaker<'a> {
       let line_bounds = self.initial_line_placement(root, layout_box);
       self.pending_line.bounds.content.x = line_bounds.content.x;
       self.pending_line.bounds.content.y = line_bounds.content.y;
-      self.pending_line.green_zone.width = line_bounds.margin_box().width;
+      self.pending_line.green_zone.width = line_bounds.margin_horizontal_box().width;
     }
 
     // TODO: Check inline box is fit in green_zone
@@ -78,62 +78,70 @@ impl<'a> LineBreaker<'a> {
       BoxType::InlineNode(node) => {
         let style = layout_box.get_style_node();
 
+        {
+          let mut d = layout_box.dimensions.borrow_mut();
+  
+          let zero = Value::Length(0.0, Unit::Px);
+  
+          let margin_left = node.lookup("margin-left", "margin", &zero);
+          let margin_right = node.lookup("margin-right", "margin", &zero);
+      
+          let border_left = node.lookup("border-left-width", "border", &zero);
+          let border_right = node.lookup("border-right-width", "border", &zero);
+      
+          let padding_left = node.lookup("padding-left", "padding", &zero);
+          let padding_right = node.lookup("padding-right", "padding", &zero);
+  
+          d.margin.left = margin_left.to_px();
+          d.margin.right = margin_right.to_px();
+          
+          d.padding.left = padding_left.to_px();
+          d.padding.right = padding_right.to_px();
+  
+          d.border.left = border_left.to_px();
+          d.border.right = border_right.to_px();
+  
+          let margin_top = node.lookup("margin-top", "margin", &zero);
+          let margin_bottom = node.lookup("margin-bottom", "margin", &zero);
+      
+          let border_top = node.lookup("border-top-width", "border", &zero);
+          let border_bottom = node.lookup("border-bottom-width", "border", &zero);
+      
+          let padding_top = node.lookup("padding-top", "padding", &zero);
+          let padding_bottom = node.lookup("padding-bottom", "padding", &zero);
+  
+          d.margin.top = margin_top.to_px();
+          d.margin.bottom = margin_bottom.to_px();
+          
+          d.padding.top = padding_top.to_px();
+          d.padding.bottom = padding_bottom.to_px();
+  
+          d.border.top = border_top.to_px();
+          d.border.bottom = border_bottom.to_px();
+        }
+
         for child in &layout_box.children {
           self.layout(root, child);
         }
 
         let mut total_width = 0.;
-        for child in &layout_box.children {
-          let mut d = child.dimensions.borrow_mut();
-          let margin_box = d.margin_box();
-          d.content.x = total_width;
-          total_width += margin_box.width;
-          self.work_list.pop_back();
-          self.pending_line.range.end -= 1;
+        {
+          let parent_d = layout_box.dimensions.borrow();
+          for child in &layout_box.children {
+            let mut d = child.dimensions.borrow_mut();
+            let margin_box = d.margin_horizontal_box();
+            d.content.x = total_width + parent_d.margin_left_offset();
+            total_width += margin_box.width;
+            self.work_list.pop_back();
+            self.pending_line.range.end -= 1;
+          }
         }
 
         let mut d = layout_box.dimensions.borrow_mut();
         d.content.width = total_width;
-        
-        let zero = Value::Length(0.0, Unit::Px);
-
-        let margin_left = node.lookup("margin-left", "margin", &zero);
-        let margin_right = node.lookup("margin-right", "margin", &zero);
-    
-        let border_left = node.lookup("border-left-width", "border", &zero);
-        let border_right = node.lookup("border-right-width", "border", &zero);
-    
-        let padding_left = node.lookup("padding-left", "padding", &zero);
-        let padding_right = node.lookup("padding-right", "padding", &zero);
-
-        d.margin.left = margin_left.to_px();
-        d.margin.right = margin_right.to_px();
-        
-        d.padding.left = padding_left.to_px();
-        d.padding.right = padding_right.to_px();
-
-        d.border.left = border_left.to_px();
-        d.border.right = border_right.to_px();
 
         d.content.height = Font::new_from_style(&style).ascent;
 
-        let margin_top = node.lookup("margin-top", "margin", &zero);
-        let margin_bottom = node.lookup("margin-bottom", "margin", &zero);
-    
-        let border_top = node.lookup("border-top-width", "border", &zero);
-        let border_bottom = node.lookup("border-bottom-width", "border", &zero);
-    
-        let padding_top = node.lookup("padding-top", "padding", &zero);
-        let padding_bottom = node.lookup("padding-bottom", "padding", &zero);
-
-        d.margin.top = margin_top.to_px();
-        d.margin.bottom = margin_bottom.to_px();
-        
-        d.padding.top = padding_top.to_px();
-        d.padding.bottom = padding_bottom.to_px();
-
-        d.border.top = border_top.to_px();
-        d.border.bottom = border_bottom.to_px();
         self.work_list.push_back(layout_box.clone());
       },
       BoxType::TextNode(node) => {
@@ -205,14 +213,18 @@ impl<'a> InlineBox<'a> {
     let mut new_rect_x = additional_rect_x;
     for child in &mut layout_box.children {
       if let BoxType::InlineNode(_) = child.box_type {
+        let new_rect_x = {
+          let d = child.dimensions.borrow();
+          new_rect_x + d.margin_left_offset()
+        };
         self.recursive_position(child, new_rect_x, additional_rect_y);
       }
 
       let mut d = child.dimensions.borrow_mut();
 
-      new_rect_x += d.margin_box().width;
+      new_rect_x += d.margin_horizontal_box().width;
 
-      d.content.x += additional_rect_x;
+      d.content.x += additional_rect_x + d.margin_left_offset();
       d.content.y += additional_rect_y;
     }
   }
@@ -224,14 +236,14 @@ impl<'a> InlineBox<'a> {
         let new_rect_y = line.bounds.content.y + line.metrics.leading;
         {
           let mut d = item.dimensions.borrow_mut();
-          d.content.x += line_box_x;
+          d.content.x += line_box_x + d.margin_left_offset();
           d.content.y += new_rect_y;
         }
         if let BoxType::InlineNode(_) = item.box_type {
           self.recursive_position(item, line_box_x, new_rect_y);
         }
         let d = item.dimensions.borrow();
-        let margin_box = d.margin_box();
+        let margin_box = d.margin_horizontal_box();
         let line_box_width = margin_box.width;
         line_box_x += line_box_width;
         line_breaker.max_width = line_box_width.max(line_breaker.max_width);

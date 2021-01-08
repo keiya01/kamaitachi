@@ -32,6 +32,42 @@ impl Dimensions {
   pub fn margin_box(&self) -> Rect {
     self.border_box().expanded_by(&self.margin)
   }
+
+  pub fn padding_horizontal_box(&self) -> Rect {
+    self.content.expanded_horizontal_by(&self.padding)
+  }
+
+  pub fn border_horizontal_box(&self) -> Rect {
+    self.padding_horizontal_box().expanded_horizontal_by(&self.border)
+  }
+
+  pub fn margin_horizontal_box(&self) -> Rect {
+    self.border_horizontal_box().expanded_horizontal_by(&self.margin)
+  }
+
+  pub fn padding_left_offset(&self) -> f32 {
+    self.padding.left
+  }
+
+  pub fn border_left_offset(&self) -> f32 {
+    self.padding_left_offset() + self.border.left
+  }
+
+  pub fn margin_left_offset(&self) -> f32 {
+    self.border_left_offset() + self.margin.left
+  }
+
+  pub fn padding_right_offset(&self) -> f32 {
+    self.padding.right
+  }
+
+  pub fn border_right_offset(&self) -> f32 {
+    self.padding_right_offset() + self.border.right
+  }
+
+  pub fn margin_right_offset(&self) -> f32 {
+    self.border_right_offset() + self.margin.right
+  }
 }
 
 #[derive(Default, Debug, Clone)]
@@ -49,6 +85,15 @@ impl Rect {
       y: self.y - edge.top,
       width: self.width + edge.left + edge.right,
       height: self.height + edge.top + edge.bottom,
+    }
+  }
+
+  fn expanded_horizontal_by(&self, edge: &EdgeSizes) -> Rect {
+    Rect {
+      x: self.x - edge.left,
+      y: self.y,
+      width: self.width + edge.left + edge.right,
+      height: self.height,
     }
   }
 }

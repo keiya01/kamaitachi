@@ -4,15 +4,19 @@ pub use font_kit::handle::Handle;
 use font_kit::source::SystemSource;
 use font_kit::properties::Properties;
 use font_kit::font;
+use core_text::font::CTFont;
+use glyph_brush::{ab_glyph::{FontArc, PxScale}, GlyphBrushBuilder, Section, Text, GlyphCruncher, GlyphBrush};
 
 use crate::style::StyledNode;
 
 #[derive(Debug, Clone)]
 pub struct Font {
+  pub font: font::Font,
   pub ascent: f32,
   pub descent: f32,
-  pub font: font::Font,
   pub size: f32,
+  ctfont: CTFont,
+  units_per_em: f32,
 }
 
 fn px_to_pt(px: f64) -> f64 {
@@ -30,6 +34,7 @@ impl Font {
 
     let ctfont = font.native_font();
     let ctfont = ctfont.clone_with_font_size(size as f64);
+
     let ascent = ctfont.ascent() as f64;
     let descent = ctfont.descent() as f64;
 
@@ -39,11 +44,13 @@ impl Font {
       font,
       ascent: pt_to_px(ascent * scale) as f32,
       descent: pt_to_px(descent * scale) as f32,
-      size
+      size,
+      units_per_em: ctfont.units_per_em() as f32,
+      ctfont,
     }
   }
 
-  // TODO: cache font data
+  // TODO: cache font data with font-size and font-family
   pub fn new_from_style(style: &StyledNode) -> Font {
     Font::new(style.font_family(), style.font_size())
   }
@@ -60,16 +67,14 @@ impl Font {
   }
 
   pub fn width(&self, text: &str) -> f32 {
-    let metrics = self.font.metrics();
-    let mut width = 0.;
-    for c in text.chars() {
-        if let Some(glyph_id) = self.font.glyph_for_char(c) {
-            if let Ok(advance) = self.font.advance(glyph_id) {
-                width += advance.x() * self.size / metrics.units_per_em as f32;
-            }
-        }
+    let font_byte = FontArc::try_from_slice(self.get_static_font_data()).unwrap();
+    let mut measure_brush: GlyphBrush<()> = GlyphBrushBuilder::using_font(font_byte).build();
+    let bounds = measure_brush.glyph_bounds(Section::default().add_text(Text::new(text).with_scale(PxScale::from(self.size))));
+    
+    match bounds {
+      Some(rect) => rect.width().ceil(),
+      None => 0.,
     }
-    width
   }
 
   pub fn get_static_font_data(&self) -> &'static [u8] {

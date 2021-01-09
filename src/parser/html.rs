@@ -155,7 +155,7 @@ impl HTMLParser {
             if c == '>' || c.is_whitespace() {
                 return false;
             }
-            return true;
+            true
         });
 
         if !self.eof() && is_quote {
@@ -165,10 +165,7 @@ impl HTMLParser {
     }
 
     fn parse_tag_name(&mut self) -> String {
-        self.consume_while(|c| match c {
-            'a'..='z' | 'A'..='Z' | '0'..='9' => true,
-            _ => false,
-        })
+        self.consume_while(|c| matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9'))
     }
 }
 

@@ -161,7 +161,7 @@ impl<'a> LayoutBox<'a> {
         // so parent width need to be calculated before child width.
         self.calculate_block_width(containing_block.clone());
 
-        self.calculate_block_position(containing_block.clone());
+        self.calculate_block_position(containing_block);
 
         self.layout_block_children();
 
@@ -175,7 +175,7 @@ impl<'a> LayoutBox<'a> {
 
         // `width` has initial value `auto`.
         let auto = Value::Keyword("auto".into());
-        let mut width = style.value("width").unwrap_or(auto.clone());
+        let mut width = style.value("width").unwrap_or_else(|| auto.clone());
 
         // `margin`, `border`, `padding` has initial value `0`.
         let zero = Value::Length(0.0, Unit::Px);
@@ -445,7 +445,7 @@ mod tests {
         rules.extend(ua_rules);
         let cssom = Stylesheet::new(rules);
 
-        let styled_node = create_style_tree(Rc::new(&dom), &cssom, None);
+        let styled_node = create_style_tree(&dom, &cssom, None);
 
         let mut viewport: Dimensions = Default::default();
         viewport.content.width = 800.0;

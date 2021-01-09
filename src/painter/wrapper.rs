@@ -11,6 +11,12 @@ impl Wrapper {
     }
 }
 
+impl Default for Wrapper {
+    fn default() -> Wrapper {
+        Wrapper::new()
+    }
+}
+
 impl<Message, B> Widget<Message, Renderer<B>> for Wrapper
 where
     B: Backend,

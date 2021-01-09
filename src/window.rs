@@ -8,14 +8,13 @@ use std::{env, fs, io};
 
 use crate::cssom::{Origin, Stylesheet};
 use crate::layout::{layout_tree, Dimensions};
-use crate::painter::block::Block;
-use crate::painter::text::Text;
-use crate::painter::wrapper::Wrapper;
-use crate::painter::{build_display_list, DisplayCommand, DisplayList};
+use crate::painter;
 use crate::parser::{css, html};
 use crate::style::create_style_tree;
 use css::CSSParser;
 use html::HTMLParser;
+use painter::wrapper::Wrapper;
+use painter::{build_display_list, DisplayCommand, DisplayList};
 
 #[derive(Debug)]
 pub enum Message {}
@@ -40,13 +39,15 @@ impl<'a> Sandbox for Window {
     }
 
     fn view(&mut self) -> Element<Message> {
-        let mut wrapper = Wrapper::new();
+        let mut wrapper = Wrapper::default();
 
         for item in &self.items {
             wrapper.items.push(match item {
-                DisplayCommand::SolidColor(color, rect) => Block::new(color.clone(), rect.clone()),
+                DisplayCommand::SolidColor(color, rect) => {
+                    painter::create_block(color.clone(), rect.clone())
+                }
                 DisplayCommand::Text(text, color, rect, font) => {
-                    Text::new(text.into(), color.clone(), rect.clone(), font.clone())
+                    painter::create_text(text.into(), color.clone(), rect.clone(), font.clone())
                 }
             });
         }
@@ -57,7 +58,7 @@ impl<'a> Sandbox for Window {
 
 fn prepare() -> DisplayList {
     let args: Vec<String> = env::args().collect();
-    if args.len() < 1 {
+    if args.is_empty() {
         panic!("You need to specify entry path.");
     }
     let path = Path::new(&args[1]);
@@ -101,7 +102,7 @@ fn paint(html: String, css_list: Vec<String>) -> DisplayList {
 
     let cssom = Stylesheet::new(author_rules);
 
-    let styled_node = create_style_tree(Rc::new(&dom), &cssom, None);
+    let styled_node = create_style_tree(&dom, &cssom, None);
 
     let mut viewport: Dimensions = Default::default();
     viewport.content.width = 1200.0;

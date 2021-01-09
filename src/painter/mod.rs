@@ -1,6 +1,9 @@
-pub mod block;
-pub mod text;
+mod block;
+mod text;
 pub mod wrapper;
+
+pub use block::create_block;
+pub use text::create_text;
 
 use crate::cssom::{Color, Value};
 use crate::dom::NodeType;
@@ -31,12 +34,12 @@ fn render_layout_box(list: &mut DisplayList, layout_box: &LayoutBox) {
 }
 
 fn render_background(list: &mut DisplayList, layout_box: &LayoutBox) {
-    get_color(layout_box, "background").map(|color| {
+    if let Some(color) = get_color(layout_box, "background") {
         list.push(DisplayCommand::SolidColor(
             color,
             layout_box.dimensions.borrow().border_box(),
         ))
-    });
+    }
 }
 
 fn render_borders(list: &mut DisplayList, layout_box: &LayoutBox) {
@@ -83,7 +86,7 @@ fn render_borders(list: &mut DisplayList, layout_box: &LayoutBox) {
 
     // border-top
     list.push(DisplayCommand::SolidColor(
-        color.clone(),
+        color,
         Rect {
             x: border_box.x,
             y: border_box.y + border_box.height - d.border.bottom,
@@ -104,7 +107,7 @@ fn render_text(list: &mut DisplayList, layout_box: &LayoutBox) {
         _ => unreachable!(),
     };
 
-    let color = get_color(layout_box, "color").unwrap_or(Color::new(0, 0, 0, 1.0));
+    let color = get_color(layout_box, "color").unwrap_or_else(|| Color::new(0, 0, 0, 1.0));
     list.push(DisplayCommand::Text(
         text.into(),
         color,

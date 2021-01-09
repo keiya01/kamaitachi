@@ -4,7 +4,6 @@
 // - [ ] Initial
 
 use std::collections::HashMap;
-use std::rc::Rc;
 
 use crate::{cssom, dom, layout, parser};
 use cssom::*;
@@ -18,7 +17,7 @@ type PropertyMap = HashMap<String, Value>;
 // A node with associated style data.
 #[derive(Debug)]
 pub struct StyledNode<'a> {
-    pub node: Rc<&'a Node>,
+    pub node: &'a Node,
     pub specified_values: PropertyMap,
     pub children: Vec<StyledNode<'a>>,
 }
@@ -40,19 +39,19 @@ const INHERITABLE_PROPERTY_LIST: [&str; 3] = ["font-size", "color", "line-height
 
 impl<'a> StyledNode<'a> {
     pub fn new(
-        node: Rc<&'a Node>,
+        node: &'a Node,
         specified_values: PropertyMap,
         children: Vec<StyledNode<'a>>,
     ) -> StyledNode<'a> {
-        return StyledNode {
+        StyledNode {
             node,
             specified_values,
             children,
-        };
+        }
     }
 
     pub fn value(&self, name: &str) -> Option<Value> {
-        self.specified_values.get(name).map(|v| v.clone())
+        self.specified_values.get(name).cloned()
     }
 
     pub fn display(&self) -> Display {
@@ -78,7 +77,7 @@ impl<'a> StyledNode<'a> {
     pub fn font_size(&self) -> f32 {
         let default_font_size = Value::Length(16.0, Unit::Px);
         self.value("font-size")
-            .unwrap_or(default_font_size.clone())
+            .unwrap_or_else(|| default_font_size)
             .to_px()
             * MEDIUM
     }
@@ -87,18 +86,18 @@ impl<'a> StyledNode<'a> {
         let default_line_height = Value::Number(1.2);
         let line_height = self
             .value("line-height")
-            .unwrap_or(default_line_height.clone())
+            .unwrap_or_else(|| default_line_height)
             .to_px();
         self.font_size() * line_height
     }
 }
 
 pub fn create_style_tree<'a>(
-    root: Rc<&'a Node>,
+    root: &'a Node,
     stylesheet: &'a Stylesheet,
     inherited_specified_values: Option<PropertyMap>,
 ) -> StyledNode<'a> {
-    let inherited_specified_values = inherited_specified_values.unwrap_or(HashMap::new());
+    let inherited_specified_values = inherited_specified_values.unwrap_or_default();
     let root_specified_values = match &root.node_type {
         NodeType::Element(elm) => specified_values(elm, stylesheet, inherited_specified_values),
         NodeType::Text(_) => inherited_specified_values,
@@ -110,13 +109,13 @@ pub fn create_style_tree<'a>(
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
     StyledNode::new(
-        root.clone(),
+        root,
         root_specified_values,
         root.children
             .iter()
             .map(|node| {
                 create_style_tree(
-                    Rc::new(node),
+                    node,
                     stylesheet,
                     Some(new_inherited_specified_values.clone()),
                 )
@@ -196,7 +195,7 @@ fn matches_simple_selector(elm: &ElementData, selector: &SimpleSelector) -> bool
         return false;
     }
 
-    return true;
+    true
 }
 
 #[cfg(test)]
@@ -255,7 +254,7 @@ div#foo {
         let rules = css_parser.parse_rules(Origin::Author);
         let cssom = Stylesheet::new(rules);
 
-        let styled_node = create_style_tree(Rc::new(&dom), &cssom, None);
+        let styled_node = create_style_tree(&dom, &cssom, None);
 
         test_element(&styled_node.node.node_type, &"body");
         assert_eq!(&styled_node.specified_values.len(), &1);
@@ -353,7 +352,7 @@ div#foo.baz {
 
         let cssom = Stylesheet::new(author_rules);
 
-        let styled_node = create_style_tree(Rc::new(&dom), &cssom, None);
+        let styled_node = create_style_tree(&dom, &cssom, None);
 
         test_element(&styled_node.node.node_type, &"body");
         assert_eq!(&styled_node.specified_values.len(), &3);
@@ -417,7 +416,7 @@ div#foo.baz {
 
         let cssom = Stylesheet::new(author_rules);
 
-        let styled_node = create_style_tree(Rc::new(&dom), &cssom, None);
+        let styled_node = create_style_tree(&dom, &cssom, None);
 
         test_element(&styled_node.node.node_type, &"body");
         assert_eq!(&styled_node.specified_values.len(), &0);
@@ -470,7 +469,7 @@ div#foo.baz {
 
         let cssom = Stylesheet::new(author_rules);
 
-        let styled_node = create_style_tree(Rc::new(&dom), &cssom, None);
+        let styled_node = create_style_tree(&dom, &cssom, None);
 
         test_element(&styled_node.node.node_type, &"body");
         assert_eq!(&styled_node.specified_values.len(), &0);

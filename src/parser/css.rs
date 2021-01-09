@@ -46,7 +46,7 @@ impl CSSParser {
             }
         }
         // Return selectors with highest specificity first, for use in matching.
-        selectors.sort_by(|a, b| b.specificity().cmp(&a.specificity()));
+        selectors.sort_by_key(|b| std::cmp::Reverse(b.specificity()));
         selectors
     }
 
@@ -144,10 +144,7 @@ impl CSSParser {
     }
 
     fn parse_float(&mut self) -> f32 {
-        let s = self.consume_while(|c| match c {
-            '0'..='9' | '.' => true,
-            _ => false,
-        });
+        let s = self.consume_while(|c| matches!(c, '0'..='9' | '.'));
         s.parse().unwrap_or(0.0)
     }
 
@@ -196,11 +193,8 @@ impl Parser for CSSParser {
 }
 
 fn valid_identifier_char(c: char) -> bool {
-    match c {
-        // TODO: Include U+00A0 and higher.
-        'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' => true,
-        _ => false,
-    }
+    // TODO: Include U+00A0 and higher.
+    matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_')
 }
 
 #[cfg(test)]

@@ -48,11 +48,8 @@ impl<'a> LineBreaker<'a> {
 
     fn scan_for_line(&mut self, root: &LayoutBox<'a>, old_boxes: Vec<LayoutBox<'a>>) {
         self.layout_boxes(root, old_boxes);
-        loop {
-            match self.work_list.pop_front() {
-                Some(item) => self.new_boxes.push(item),
-                None => break,
-            };
+        while let Some(item) = self.work_list.pop_front() {
+            self.new_boxes.push(item)
         }
     }
 

@@ -7,7 +7,7 @@
 
 ## Inline
 
-- [ ] basic text
+- [x] basic text
   - wrap inline element with anonymous inline box
   - font
     - ascent, descent
@@ -15,10 +15,10 @@
   - calculate line-height
   - positioning
     - block-start: left-top of containing block
-    - block-end: font leaving position
+    - block-end: font leading position
     - inline-start: left-top of containing block 
     - inline-end: text width
-- [ ] style inheritance
+- [x] style inheritance
 - [ ] line break
 - [ ] white space
 - [ ] vertical align, text-align

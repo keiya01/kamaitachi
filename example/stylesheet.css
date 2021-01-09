@@ -1,8 +1,30 @@
-* { display: block; padding: 12px; }
-.a { background: #ff0000; }
-.b { background: #ffa500; }
-.c { background: #ffff00; }
-.d { background: #008000; }
-.e { background: #0000ff; }
-.f { background: #4b0082; }
-.g { background: #800080; }
+div, p {
+  display: block;
+}
+
+span {
+  display: inline;
+  padding: 3px;
+  margin: 5px;
+  border-color: #b8860b;
+  border-left-width: 1px;
+  border-top-width: 1px;
+  border-right-width: 1px;
+  border-bottom-width: 1px;
+}
+
+.container {
+  font-size: 20px;
+  padding: 10px;
+  background: #000000;
+}
+
+.world {
+  background: #0f00f0;
+  color: #ff00ff;
+}
+
+.hey {
+  background: #00ff00;
+  color: #ff0f0f;
+}

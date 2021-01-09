@@ -4,7 +4,6 @@ use std::ops::Range;
 use super::{Dimensions, Rect, LayoutBox, BoxType, TextNode};
 use crate::dom::{NodeType};
 use super::font::{Font};
-use crate::cssom::{Value, Unit};
 
 #[derive(Clone)]
 struct Line {
@@ -43,7 +42,7 @@ impl<'a> LineBreaker<'a> {
   }
 
   fn scan_for_line(&mut self, root: &LayoutBox<'a>, old_boxes: Vec<LayoutBox<'a>>) {
-    self.layout_list(root, old_boxes);
+    self.layout_boxes(root, old_boxes);
     loop {
       match self.work_list.pop_front() {
         Some(item) => self.new_boxes.push(item),
@@ -52,7 +51,7 @@ impl<'a> LineBreaker<'a> {
     }
   }
 
-  pub fn layout_list(&mut self, root: &LayoutBox<'a>, old_boxes: Vec<LayoutBox<'a>>) {
+  fn layout_boxes(&mut self, root: &LayoutBox<'a>, old_boxes: Vec<LayoutBox<'a>>) {
     for layout_box in &old_boxes {
       self.layout(root, &layout_box);
     }
@@ -75,87 +74,50 @@ impl<'a> LineBreaker<'a> {
     self.pending_line.range.end += 1;
 
     match &layout_box.box_type {
-      BoxType::InlineNode(node) => {
-        let style = layout_box.get_style_node();
-
-        {
-          let mut d = layout_box.dimensions.borrow_mut();
-  
-          let zero = Value::Length(0.0, Unit::Px);
-  
-          let margin_left = node.lookup("margin-left", "margin", &zero);
-          let margin_right = node.lookup("margin-right", "margin", &zero);
-      
-          let border_left = node.lookup("border-left-width", "border", &zero);
-          let border_right = node.lookup("border-right-width", "border", &zero);
-      
-          let padding_left = node.lookup("padding-left", "padding", &zero);
-          let padding_right = node.lookup("padding-right", "padding", &zero);
-  
-          d.margin.left = margin_left.to_px();
-          d.margin.right = margin_right.to_px();
-          
-          d.padding.left = padding_left.to_px();
-          d.padding.right = padding_right.to_px();
-  
-          d.border.left = border_left.to_px();
-          d.border.right = border_right.to_px();
-  
-          let margin_top = node.lookup("margin-top", "margin", &zero);
-          let margin_bottom = node.lookup("margin-bottom", "margin", &zero);
-      
-          let border_top = node.lookup("border-top-width", "border", &zero);
-          let border_bottom = node.lookup("border-bottom-width", "border", &zero);
-      
-          let padding_top = node.lookup("padding-top", "padding", &zero);
-          let padding_bottom = node.lookup("padding-bottom", "padding", &zero);
-  
-          d.margin.top = margin_top.to_px();
-          d.margin.bottom = margin_bottom.to_px();
-          
-          d.padding.top = padding_top.to_px();
-          d.padding.bottom = padding_bottom.to_px();
-  
-          d.border.top = border_top.to_px();
-          d.border.bottom = border_bottom.to_px();
-        }
-
-        for child in &layout_box.children {
-          self.layout(root, child);
-        }
-
-        let mut total_width = 0.;
-        {
-          let parent_d = layout_box.dimensions.borrow();
-          for child in &layout_box.children {
-            let mut d = child.dimensions.borrow_mut();
-            let margin_box = d.margin_horizontal_box();
-            d.content.x = total_width + parent_d.margin_left_offset();
-            total_width += margin_box.width;
-            self.work_list.pop_back();
-            self.pending_line.range.end -= 1;
-          }
-        }
-
-        let mut d = layout_box.dimensions.borrow_mut();
-        d.content.width = total_width;
-
-        d.content.height = Font::new_from_style(&style).ascent;
-
-        self.work_list.push_back(layout_box.clone());
-      },
-      BoxType::TextNode(node) => {
-        let mut d = layout_box.dimensions.borrow_mut();
-        d.content.width = self.text_width(&node);
-        let metrics = self.pending_line.metrics.calc_space(node, node.styled_node.line_height());
-        d.content.height = node.font.ascent + node.font.descent;
-        self.work_list.push_back(layout_box.clone());
-        // Maybe, this calculation is specific case for `iced`
-        d.content.y -= metrics.leading / 2.;
-      },
+      BoxType::InlineNode(_) => self.layout_inline(root, layout_box),
+      BoxType::TextNode(node) => self.layout_text(node, layout_box),
       BoxType::BlockNode(_) => unimplemented!(),
       _ => unreachable!(),
     }
+  }
+
+  fn layout_inline(&mut self, root: &LayoutBox<'a>, layout_box: &LayoutBox<'a>) {
+    layout_box.assign_horizontal_margin_box();
+    layout_box.assign_vertical_margin_box();
+
+    for child in &layout_box.children {
+      self.layout(root, child);
+    }
+
+    self.calculate_inline_descendant_position(layout_box);
+
+    self.work_list.push_back(layout_box.clone());
+  }
+
+  fn calculate_inline_descendant_position(&mut self, layout_box: &LayoutBox<'a>) {
+    let mut total_width = 0.;
+    let mut containing_block = layout_box.dimensions.borrow_mut();
+    for child in &layout_box.children {
+      let mut d = child.dimensions.borrow_mut();
+      let margin_box = d.margin_horizontal_box();
+      d.content.x = total_width + containing_block.margin_left_offset();
+      total_width += margin_box.width;
+      self.work_list.pop_back();
+      self.pending_line.range.end -= 1;
+    }
+
+    containing_block.content.width = total_width;
+    containing_block.content.height = Font::new_from_style(layout_box.get_style_node()).ascent;
+  }
+
+  fn layout_text(&mut self, node: &TextNode, layout_box: &LayoutBox<'a>) {
+    let mut d = layout_box.dimensions.borrow_mut();
+    d.content.width = self.text_width(node);
+    let metrics = self.pending_line.metrics.calc_space(node, node.styled_node.line_height());
+    d.content.height = node.font.ascent + node.font.descent;
+    self.work_list.push_back(layout_box.clone());
+    // Maybe, this calculation is specific case for `iced`
+    d.content.y -= metrics.leading / 2.;
   }
 
   fn initial_line_placement(&self, root: &LayoutBox, _layout_box: &LayoutBox) -> Dimensions {
@@ -199,7 +161,7 @@ impl<'a> InlineBox<'a> {
     InlineBox { root, boxes, width: 0.0, height: 0.0 }
   }
 
-  pub fn layout(&mut self) {
+  pub fn process(&mut self) {
     let mut line_breaker = LineBreaker::new();
     let old_boxes = mem::replace(&mut self.boxes, Vec::new());
     line_breaker.scan_for_line(&self.root, old_boxes);
@@ -207,26 +169,6 @@ impl<'a> InlineBox<'a> {
     self.boxes = line_breaker.new_boxes;
     self.width = line_breaker.max_width;
     self.height = line_breaker.cur_height;
-  }
-
-  fn recursive_position(&self, layout_box: &mut LayoutBox<'a>, additional_rect_x: f32, additional_rect_y: f32) {
-    let mut new_rect_x = additional_rect_x;
-    for child in &mut layout_box.children {
-      if let BoxType::InlineNode(_) = child.box_type {
-        let new_rect_x = {
-          let d = child.dimensions.borrow();
-          new_rect_x + d.margin_left_offset()
-        };
-        self.recursive_position(child, new_rect_x, additional_rect_y);
-      }
-
-      let mut d = child.dimensions.borrow_mut();
-
-      new_rect_x += d.margin_horizontal_box().width;
-
-      d.content.x += additional_rect_x + d.margin_left_offset();
-      d.content.y += additional_rect_y;
-    }
   }
 
   fn assign_position(&self, line_breaker: &mut LineBreaker<'a>) {
@@ -249,6 +191,26 @@ impl<'a> InlineBox<'a> {
         line_breaker.max_width = line_box_width.max(line_breaker.max_width);
       }
       line_breaker.cur_height += line.metrics.space_above_baseline + line.metrics.space_under_baseline;
+    }
+  }
+
+  fn recursive_position(&self, layout_box: &mut LayoutBox<'a>, additional_rect_x: f32, additional_rect_y: f32) {
+    let mut new_rect_x = additional_rect_x;
+    for child in &mut layout_box.children {
+      if let BoxType::InlineNode(_) = child.box_type {
+        let new_rect_x = {
+          let d = child.dimensions.borrow();
+          new_rect_x + d.margin_left_offset()
+        };
+        self.recursive_position(child, new_rect_x, additional_rect_y);
+      }
+
+      let mut d = child.dimensions.borrow_mut();
+
+      new_rect_x += d.margin_horizontal_box().width;
+
+      d.content.x += additional_rect_x + d.margin_left_offset();
+      d.content.y += additional_rect_y;
     }
   }
 }

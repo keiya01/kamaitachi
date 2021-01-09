@@ -142,7 +142,7 @@ impl<'a> LayoutBox<'a> {
         }
         // Anonymous block is including only inline box in children
         let mut inline_box = InlineBox::new(self.clone(), mem::replace(&mut self.children, Vec::new()));
-        inline_box.layout();
+        inline_box.process();
         let mut d = self.dimensions.borrow_mut();
         d.content.width = inline_box.width;
         d.content.height = inline_box.height;
@@ -246,22 +246,12 @@ impl<'a> LayoutBox<'a> {
     d.border.right = border_right.to_px();
   }
 
-  fn calculate_block_position(&mut self, containing_block: Rc<RefCell<Dimensions>>) {
-    let style = self.get_style_node();
-    let mut d = self.dimensions.borrow_mut();
-
+  fn calculate_block_position(&mut self, containing_block: Rc<RefCell<Dimensions>>) {    
     let containing_block = containing_block.borrow();
-
-    let zero = Value::Length(0.0, Unit::Px);
-
-    d.margin.top = style.lookup("margin-top", "margin", &zero).to_px();
-    d.margin.bottom = style.lookup("margin-bottom", "margin", &zero).to_px();
-
-    d.border.top = style.lookup("border-top", "border", &zero).to_px();
-    d.border.bottom = style.lookup("border-bottom", "border", &zero).to_px();
-
-    d.padding.top = style.lookup("padding-top", "padding", &zero).to_px();
-    d.padding.bottom = style.lookup("padding-bottom", "padding", &zero).to_px();
+    
+    self.assign_vertical_margin_box();
+    
+    let mut d = self.dimensions.borrow_mut();
 
     d.content.x = containing_block.content.x +
                   d.margin.left + d.border.left + d.padding.left;
@@ -298,6 +288,36 @@ impl<'a> LayoutBox<'a> {
         self.children.last_mut().unwrap()
       },
     }
+  }
+
+  fn assign_vertical_margin_box(&self) {
+    let node = self.get_style_node();
+    let mut d  = self.dimensions.borrow_mut();
+    let zero = Value::Length(0.0, Unit::Px);
+
+    d.margin.top = node.lookup("margin-top", "margin", &zero).to_px();
+    d.margin.bottom = node.lookup("margin-bottom", "margin", &zero).to_px();
+    
+    d.border.top = node.lookup("border-top-width", "border", &zero).to_px();
+    d.border.bottom = node.lookup("border-bottom-width", "border", &zero).to_px();
+
+    d.padding.top = node.lookup("padding-top", "padding", &zero).to_px();
+    d.padding.bottom = node.lookup("padding-bottom", "padding", &zero).to_px();
+  }
+
+  fn assign_horizontal_margin_box(&self) {
+    let node = self.get_style_node();
+    let mut d = self.dimensions.borrow_mut();
+    let zero = Value::Length(0.0, Unit::Px);
+
+    d.margin.left = node.lookup("margin-left", "margin", &zero).to_px();
+    d.margin.right = node.lookup("margin-right", "margin", &zero).to_px();
+        
+    d.border.left = node.lookup("border-left-width", "border", &zero).to_px();
+    d.border.right = node.lookup("border-right-width", "border", &zero).to_px();
+
+    d.padding.left = node.lookup("padding-left", "padding", &zero).to_px();
+    d.padding.right = node.lookup("padding-right", "padding", &zero).to_px();
   }
 }
 

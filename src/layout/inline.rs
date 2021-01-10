@@ -89,6 +89,11 @@ impl<'a> LineBreaker<'a> {
             self.pending_line.bounds.content.x = line_bounds.content.x;
             self.pending_line.bounds.content.y = line_bounds.content.y;
             self.pending_line.green_zone.width = line_bounds.content.width;
+            if self.lines.len() != 0 {
+                let last_line_index = self.lines.len() - 1;
+                let end_last_line_range = self.lines[last_line_index].range.end;
+                self.pending_line.range = end_last_line_range..end_last_line_range;
+            }
         }
 
         // TODO: Check inline box is fit in green_zone
@@ -130,6 +135,8 @@ impl<'a> LineBreaker<'a> {
             self.pending_line.range.end -= 1;
             self.new_boxes.pop();
         }
+        
+        self.pending_line.bounds.content.width += containing_block.margin_left_offset() + containing_block.margin_right_offset();
 
         containing_block.content.width = total_width;
         containing_block.content.height = Font::new_from_style(layout_box.get_style_node()).ascent;
@@ -141,12 +148,12 @@ impl<'a> LineBreaker<'a> {
 
         let remaining_width = self.pending_line.green_zone.width - self.pending_line.bounds.content.width;
 
-        if text_width >= remaining_width {
+        if text_width > remaining_width {
             // TODO: assign remaining character
             // TODO: create new text node
             self.pending_line.range.end -= 1;
             self.pending_line.is_line_broken = true;
-            // self.work_list.push_front(layout_box.clone());
+            self.work_list.push_front(layout_box.clone());
         } else {
             let metrics = self
                 .pending_line
@@ -239,7 +246,7 @@ impl<'a> InlineBox<'a> {
         for line in &line_breaker.lines {
             let mut line_box_x = line.bounds.content.x;
             for item in &mut line_breaker.new_boxes[line.range.clone()] {
-                let new_rect_y = line.bounds.content.y + line.metrics.leading;
+                let new_rect_y = line_breaker.cur_height + line.bounds.content.y + line.metrics.leading;
                 {
                     let mut d = item.dimensions.borrow_mut();
                     d.content.x += line_box_x + d.margin_left_offset();

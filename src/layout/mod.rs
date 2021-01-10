@@ -136,15 +136,15 @@ impl<'a> LayoutBox<'a> {
         match self.box_type {
             BoxType::BlockNode(_) => self.layout_block(containing_block),
             BoxType::AnonymousBlock => {
+                let containing_block = containing_block.borrow();
                 {
                     let mut d = self.dimensions.borrow_mut();
-                    let containing_block = containing_block.borrow();
                     d.content.x = containing_block.content.x;
                     d.content.y = containing_block.content.y;
                 }
                 // Anonymous block is including only inline box in children
                 let mut inline_box =
-                    InlineBox::new(self.clone(), mem::replace(&mut self.children, Vec::new()));
+                    InlineBox::new(containing_block.clone(), mem::replace(&mut self.children, Vec::new()));
                 inline_box.process();
                 let mut d = self.dimensions.borrow_mut();
                 d.content.width = inline_box.width;

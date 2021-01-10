@@ -12,6 +12,7 @@ struct Line {
     bounds: Dimensions,
     green_zone: Rect,
     metrics: LineMetrics,
+    is_line_broken: bool,
 }
 
 impl Line {
@@ -21,6 +22,7 @@ impl Line {
             bounds,
             green_zone: Default::default(),
             metrics: LineMetrics::new(),
+            is_line_broken: false,
         }
     }
 }
@@ -51,7 +53,7 @@ impl<'a> LineBreaker<'a> {
         }
     }
 
-    fn scan_for_line<I>(&mut self, root: &LayoutBox<'a>, iter_old_boxes: &mut I)
+    fn scan_for_line<I>(&mut self, root: &Dimensions, iter_old_boxes: &mut I)
     where
         I: Iterator<Item = LayoutBox<'a>>
     {
@@ -65,26 +67,28 @@ impl<'a> LineBreaker<'a> {
         self.work_list.pop_front().or_else(|| iter_old_boxes.next())
     }
 
-    fn layout_boxes<I>(&mut self, root: &LayoutBox<'a>, iter_old_boxes: &mut I)
+    fn layout_boxes<I>(&mut self, root: &Dimensions, iter_old_boxes: &mut I)
     where
         I: Iterator<Item = LayoutBox<'a>>
     {
         while let Some(layout_box) = self.next_layout_box(iter_old_boxes) {
             self.layout(root, &layout_box);
+            if self.pending_line.is_line_broken {
+                self.flush_current_line();
+            }
         }
 
         if !self.pending_line_is_empty() {
-            self.lines.push(self.pending_line.clone());
-            self.pending_line.range = 0..0;
+            self.flush_current_line();
         }
     }
 
-    fn layout(&mut self, root: &LayoutBox<'a>, layout_box: &LayoutBox<'a>) {
+    fn layout(&mut self, root: &Dimensions, layout_box: &LayoutBox<'a>) {
         if self.pending_line_is_empty() {
             let line_bounds = self.initial_line_placement(root, layout_box);
             self.pending_line.bounds.content.x = line_bounds.content.x;
             self.pending_line.bounds.content.y = line_bounds.content.y;
-            self.pending_line.green_zone.width = line_bounds.margin_horizontal_box().width;
+            self.pending_line.green_zone.width = line_bounds.content.width;
         }
 
         // TODO: Check inline box is fit in green_zone
@@ -98,23 +102,25 @@ impl<'a> LineBreaker<'a> {
         }
     }
 
-    fn layout_inline(&mut self, root: &LayoutBox<'a>, layout_box: &LayoutBox<'a>) {
+    fn layout_inline(&mut self, root: &Dimensions, layout_box: &LayoutBox<'a>) {
         layout_box.assign_horizontal_margin_box();
         layout_box.assign_vertical_margin_box();
 
-        for child in &layout_box.children {
-            self.layout(root, child);
-        }
-
-        self.calculate_inline_descendant_position(layout_box);
+        self.calculate_inline_descendant_position(root, layout_box);
 
         self.new_boxes.push(layout_box.clone());
     }
 
-    fn calculate_inline_descendant_position(&mut self, layout_box: &LayoutBox<'a>) {
+    fn calculate_inline_descendant_position(&mut self, root: &Dimensions, layout_box: &LayoutBox<'a>) {
         let mut total_width = 0.;
         let mut containing_block = layout_box.dimensions.borrow_mut();
         for child in &layout_box.children {
+            self.layout(root, child);
+
+            if self.pending_line.is_line_broken {
+                break;
+            }
+
             let mut d = child.dimensions.borrow_mut();
             let margin_box = d.margin_horizontal_box();
             d.content.x = total_width + containing_block.margin_left_offset();
@@ -131,19 +137,31 @@ impl<'a> LineBreaker<'a> {
 
     fn layout_text(&mut self, node: &TextNode, layout_box: &LayoutBox<'a>) {
         let mut d = layout_box.dimensions.borrow_mut();
-        d.content.width = self.text_width(node);
-        let metrics = self
-            .pending_line
-            .metrics
-            .calc_space(node, node.styled_node.line_height());
-        d.content.height = node.font.ascent + node.font.descent;
-        // Maybe, this calculation is specific case for `iced`
-        d.content.y -= metrics.leading / 2.;
+        let text_width = self.text_width(node);
 
-        self.new_boxes.push(layout_box.clone());
+        let remaining_width = self.pending_line.green_zone.width - self.pending_line.bounds.content.width;
+
+        if text_width >= remaining_width {
+            // TODO: assign remaining character
+            // TODO: create new text node
+            self.pending_line.range.end -= 1;
+            self.pending_line.is_line_broken = true;
+            // self.work_list.push_front(layout_box.clone());
+        } else {
+            let metrics = self
+                .pending_line
+                .metrics
+                .calc_space(node, node.styled_node.line_height());
+            d.content.height = node.font.ascent + node.font.descent;
+            // Maybe, this calculation is specific case for `iced`
+            d.content.y -= metrics.leading / 2.;
+            d.content.width = text_width;
+            self.pending_line.bounds.content.width += text_width;
+            self.new_boxes.push(layout_box.clone());
+        }
     }
 
-    fn initial_line_placement(&self, root: &LayoutBox, _layout_box: &LayoutBox) -> Dimensions {
+    fn initial_line_placement(&self, root: &Dimensions, _layout_box: &LayoutBox) -> Dimensions {
         // refer: https://github.com/servo/servo/blob/3f7697690aabd2d8c31bc880fcae21250244219a/components/layout/inline.rs#L500
         // let width = if layout_box.can_split() {
         //   self.minimum_splittable_inline_width(&layout_box)
@@ -153,7 +171,7 @@ impl<'a> LineBreaker<'a> {
         // };
 
         // TODO: calculate float dimensions
-        root.dimensions.borrow().clone()
+        root.clone()
     }
 
     fn text_width(&self, node: &TextNode<'a>) -> f32 {
@@ -171,6 +189,11 @@ impl<'a> LineBreaker<'a> {
         self.pending_line.range.end == 0
     }
 
+    fn flush_current_line(&mut self) {
+        self.lines.push(self.pending_line.clone());
+        self.pending_line = Line::new(Default::default());
+    }
+
     fn calculate_split_position(&self) {
         // 1. 一文字づつadvanced_widthを確認していく
         // 2. そのadvanced_widthを基に残りのwidthを計算していく
@@ -185,14 +208,14 @@ impl<'a> LineBreaker<'a> {
 }
 
 pub struct InlineBox<'a> {
-    pub root: LayoutBox<'a>,
+    pub root: Dimensions,
     pub boxes: Vec<LayoutBox<'a>>,
     pub width: f32,
     pub height: f32,
 }
 
 impl<'a> InlineBox<'a> {
-    pub fn new(root: LayoutBox<'a>, boxes: Vec<LayoutBox<'a>>) -> InlineBox<'a> {
+    pub fn new(root: Dimensions, boxes: Vec<LayoutBox<'a>>) -> InlineBox<'a> {
         InlineBox {
             root,
             boxes,

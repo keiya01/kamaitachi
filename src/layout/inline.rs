@@ -3,6 +3,7 @@ use super::{BoxType, Dimensions, LayoutBox, Rect, TextNode};
 use crate::dom::NodeType;
 use std::collections::VecDeque;
 use std::mem;
+use std::iter::Iterator;
 use std::ops::Range;
 
 #[derive(Clone)]
@@ -32,6 +33,9 @@ struct LineBreaker<'a> {
     // Largest width in each lines
     max_width: f32,
     cur_height: f32,
+    // This value is express index of text range
+    // If this value has index, line is broken
+    last_known_line_breaking_opportunity: Option<usize>,
 }
 
 impl<'a> LineBreaker<'a> {
@@ -43,18 +47,29 @@ impl<'a> LineBreaker<'a> {
             pending_line: Line::new(Default::default()),
             max_width: 0.0,
             cur_height: 0.0,
+            last_known_line_breaking_opportunity: None,
         }
     }
 
-    fn scan_for_line(&mut self, root: &LayoutBox<'a>, old_boxes: Vec<LayoutBox<'a>>) {
-        self.layout_boxes(root, old_boxes);
-        while let Some(item) = self.work_list.pop_front() {
-            self.new_boxes.push(item)
-        }
+    fn scan_for_line<I>(&mut self, root: &LayoutBox<'a>, iter_old_boxes: &mut I)
+    where
+        I: Iterator<Item = LayoutBox<'a>>
+    {
+        self.layout_boxes(root, iter_old_boxes);
     }
 
-    fn layout_boxes(&mut self, root: &LayoutBox<'a>, old_boxes: Vec<LayoutBox<'a>>) {
-        for layout_box in &old_boxes {
+    fn next_layout_box<I>(&mut self, iter_old_boxes: &mut I) -> Option<LayoutBox<'a>>
+    where
+        I: Iterator<Item = LayoutBox<'a>>
+    {
+        self.work_list.pop_front().or_else(|| iter_old_boxes.next())
+    }
+
+    fn layout_boxes<I>(&mut self, root: &LayoutBox<'a>, iter_old_boxes: &mut I)
+    where
+        I: Iterator<Item = LayoutBox<'a>>
+    {
+        while let Some(layout_box) = self.next_layout_box(iter_old_boxes) {
             self.layout(root, &layout_box);
         }
 
@@ -93,7 +108,7 @@ impl<'a> LineBreaker<'a> {
 
         self.calculate_inline_descendant_position(layout_box);
 
-        self.work_list.push_back(layout_box.clone());
+        self.new_boxes.push(layout_box.clone());
     }
 
     fn calculate_inline_descendant_position(&mut self, layout_box: &LayoutBox<'a>) {
@@ -104,8 +119,10 @@ impl<'a> LineBreaker<'a> {
             let margin_box = d.margin_horizontal_box();
             d.content.x = total_width + containing_block.margin_left_offset();
             total_width += margin_box.width;
-            self.work_list.pop_back();
+
+            // Remove descendant from new_boxes
             self.pending_line.range.end -= 1;
+            self.new_boxes.pop();
         }
 
         containing_block.content.width = total_width;
@@ -120,9 +137,10 @@ impl<'a> LineBreaker<'a> {
             .metrics
             .calc_space(node, node.styled_node.line_height());
         d.content.height = node.font.ascent + node.font.descent;
-        self.work_list.push_back(layout_box.clone());
         // Maybe, this calculation is specific case for `iced`
         d.content.y -= metrics.leading / 2.;
+
+        self.new_boxes.push(layout_box.clone());
     }
 
     fn initial_line_placement(&self, root: &LayoutBox, _layout_box: &LayoutBox) -> Dimensions {
@@ -152,6 +170,18 @@ impl<'a> LineBreaker<'a> {
     fn pending_line_is_empty(&self) -> bool {
         self.pending_line.range.end == 0
     }
+
+    fn calculate_split_position(&self) {
+        // 1. 一文字づつadvanced_widthを確認していく
+        // 2. そのadvanced_widthを基に残りのwidthを計算していく
+        // 3. advanced_widthが、残りのwidthより大きい場合、そこがbreak pointとなる(inline_start)
+        //    ただし、foo<span>bar</span>のような場合、fooとbarの間で改行することはしない
+        // 4. 残りのwidthを超えた文字列の位置から最後までの位置(inline_end)を記憶しておく
+        // 5. inline_start、inline_endのrangeをTextNodeのrangeに入れて、新しいTextNodeを作る
+        // 6. inline_startとinline_endが存在する場合は、inline_startのrightのborder, paddingを0に、
+        //    inline_endのleftのborder, paddingを0にする
+        // 7. inline_startをLineBreaker::linesに入れて、inline_endをwork_listにいれる
+    }
 }
 
 pub struct InlineBox<'a> {
@@ -174,7 +204,8 @@ impl<'a> InlineBox<'a> {
     pub fn process(&mut self) {
         let mut line_breaker = LineBreaker::new();
         let old_boxes = mem::replace(&mut self.boxes, Vec::new());
-        line_breaker.scan_for_line(&self.root, old_boxes);
+        let mut iter_old_boxes = old_boxes.into_iter();
+        line_breaker.scan_for_line(&self.root, &mut iter_old_boxes);
         self.assign_position(&mut line_breaker);
         self.boxes = line_breaker.new_boxes;
         self.width = line_breaker.max_width;

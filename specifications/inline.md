@@ -96,6 +96,38 @@ CSS3: https://drafts.csswg.org/css-inline-3/
 - `inline box`のユーザー定義の`width`は適用されない
 - `margin-right`と`margin-left`の値は`0`になる
 
+## Line Breaking
+
+- `forced line break` ... 明示的に行の分割が操作されている、または、blockの始まり、または終わりによって分割されること
+- `soft wrap break` ... コンテンツの折り返しによって行が分割された場合。例えば、測定しているbox内にコンテンツがfitしているために非強制的な行分割が行われている時。
+- inline-levelのコンテンツを複数の行に分割する作業は行分割(`line breaking`)と呼ばれる
+- 折り返しは、許可された分割ポイントでのみ行われる。これは[soft wrap opportunity](soft-wrap-opportunity)と呼ばれる。
+- 折り返しが、[white-space](https://www.w3.org/TR/css-text-3/#propdef-white-space)によって有効になっている場合、`soft wrap opportunity`が存在するなら、ここで行を折り返すことによって、コンテンツがオーバーフローする量を最小化しなければならない。
+- 句読点で行分割をすることをおすすめする
+- 優先順位を適用するために、`containing block`の`width`、文字の言語、`line-break`の値、さらに他の要因を使う
+- CSSは`line break opportunity`の優先順位を定義していない
+- もし`word-break: break-all;`、`line-break: anywhere;`が指定されているなら、単語分割の優先順位は期待されない(どこでも改行できる)
+- `out of flow`要素や`inline element`の境界では改行は起こらない
+- たとえ通常はそれらを抑制するための文字(`NO-BREAK SPACE`)に隣接していたとしても、webの互換性のために、画像などのreplaced要素やその他のatomic inlineの前後で`soft wrap opportunity`がある
+- 改行で消える文字によって作られる`soft wrap opportunity`の場合、その文字を直接含むボックスのプロパティは、それらの機会に改行を制御する(おそらく、overflowした段階で初めて改行が制御されるということ)
+- 二つの文字の間の境界によって定義される`soft wrap opportunity`の場合、最も近い共通の祖先の`white-space`が分割を制御する。(`white-space`を参考に改行の方法を決める)
+- `soft wrap opportunity`の前の最初と後の最後の文字のboxの場合、分割はboxのコンテンツの端とコンテンツの間というよりもむしろ、boxの前後(marginの端)ですぐに起こる
+- [ruby boxの定義](https://www.w3.org/TR/css-ruby-1/#line-breaks)
+
+
+### soft wrap opportunity
+
+- 多くのWriting Systemではハイフネーション(英単語の途中で改行になった時に`-`で一続きの単語であることを意味すること)がない場合、単語の境界で`soft wrap opportunity`が起こる
+- 多くのシステムでは、スペースや句読点をいくつかの単語を分割するために使う。そして、`soft wrap opportunity`はそれらの単語によって起こる
+- タイやクメール語ではスペースや句読点を単語の分割のために使わない(**これはサポートしない**)
+- いくつかの他のWriting Systemでは単語の境界ではなく、正書法の音節境界(?)をベースにしている
+- 中国語や日本語では、いくつかの音節が一つの書体文の単位に対応する傾向がある。従って、行分割の慣習は特定の文字の間を除いて、どこでも分割することができる
+- CSSでは`soft wrap opportunity`を区別するためのいくつかの方法を提供している
+  - `line-break` ... 行分割の制限の様々な厳格なレベルを選ぶことができる
+  - `word-break` ... 日本語や中国語のようなまとめられていて分割不可能な文を形成するために、CJK文字をnon-CJKのように扱う
+  - `hyphens` ... ハイフネーションが行を分割することを許可される
+  - `overflow-wrap` ... 溢れる可能性のある、分割不可能な文字を分割する
+
 ## Servo Code Reading
 
 path: `servo/components/line.rs`

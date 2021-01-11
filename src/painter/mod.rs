@@ -102,10 +102,7 @@ fn render_text(list: &mut DisplayList, layout_box: &LayoutBox) {
         _ => return,
     };
 
-    let text = match &(*node.styled_node.node).node_type {
-        NodeType::Text(text) => text,
-        _ => unreachable!(),
-    };
+    let text = node.get_text();
 
     let color = get_color(layout_box, "color").unwrap_or_else(|| Color::new(0, 0, 0, 1.0));
     list.push(DisplayCommand::Text(

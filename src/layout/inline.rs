@@ -1,12 +1,9 @@
 use super::font::Font;
 use super::{BoxType, Dimensions, LayoutBox, Rect, TextNode};
-use crate::dom::NodeType;
 use std::collections::VecDeque;
-use std::mem;
 use std::iter::Iterator;
+use std::mem;
 use std::ops::Range;
-use std::rc::Rc;
-use std::cell::RefCell;
 
 #[derive(Clone)]
 struct Line {
@@ -57,21 +54,21 @@ impl<'a> LineBreaker<'a> {
 
     fn scan_for_line<I>(&mut self, root: &Dimensions, iter_old_boxes: &mut I)
     where
-        I: Iterator<Item = LayoutBox<'a>>
+        I: Iterator<Item = LayoutBox<'a>>,
     {
         self.layout_boxes(root, iter_old_boxes);
     }
 
     fn next_layout_box<I>(&mut self, iter_old_boxes: &mut I) -> Option<LayoutBox<'a>>
     where
-        I: Iterator<Item = LayoutBox<'a>>
+        I: Iterator<Item = LayoutBox<'a>>,
     {
         self.work_list.pop_front().or_else(|| iter_old_boxes.next())
     }
 
     fn layout_boxes<I>(&mut self, root: &Dimensions, iter_old_boxes: &mut I)
     where
-        I: Iterator<Item = LayoutBox<'a>>
+        I: Iterator<Item = LayoutBox<'a>>,
     {
         while let Some(layout_box) = &mut self.next_layout_box(iter_old_boxes) {
             self.layout(root, layout_box);
@@ -114,31 +111,43 @@ impl<'a> LineBreaker<'a> {
 
         {
             let d = layout_box.dimensions.borrow();
-            self.pending_line.bounds.content.width += d.margin_left_offset() + d.margin_right_offset();
+            self.pending_line.bounds.content.width +=
+                d.margin_left_offset() + d.margin_right_offset();
         }
 
         self.calculate_inline_descendant_position(root, layout_box);
     }
 
-    fn calculate_inline_descendant_position(&mut self, root: &Dimensions, layout_box: &mut LayoutBox<'a>) {
+    fn calculate_inline_descendant_position(
+        &mut self,
+        root: &Dimensions,
+        layout_box: &mut LayoutBox<'a>,
+    ) {
         let mut total_width = 0.;
-        let mut containing_block = layout_box.dimensions.borrow_mut();
+        let containing_block = &layout_box.dimensions;
         let mut new_children = vec![];
         let mut broken_line_children = vec![];
 
         for child in &mut layout_box.children {
             self.layout(root, child);
 
-            if self.pending_line.is_line_broken {
-                self.work_list.pop_front();
+            if self.pending_line.is_line_broken && broken_line_children.len() != 0 {
                 broken_line_children.push(child.clone());
                 continue;
+            }
+
+            if self.pending_line.is_line_broken {
+                if let Some(layout_box) = self.work_list.pop_front() {
+                    broken_line_children.push(layout_box);
+                } else {
+                    break;
+                };
             }
 
             {
                 let mut d = child.dimensions.borrow_mut();
                 let margin_box = d.margin_horizontal_box();
-                d.content.x = total_width + containing_block.margin_left_offset();
+                d.content.x = total_width + containing_block.borrow().margin_left_offset();
                 total_width += margin_box.width;
             }
 
@@ -151,15 +160,18 @@ impl<'a> LineBreaker<'a> {
 
         if self.pending_line.is_line_broken && broken_line_children.len() != 0 {
             let mut new_layout_box = layout_box.clone();
-            new_layout_box.dimensions = Rc::new(RefCell::new(containing_block.clone()));
             new_layout_box.children = broken_line_children;
             self.work_list.push_front(new_layout_box);
         }
 
         if new_children.len() != 0 {
             layout_box.children = new_children;
-            containing_block.content.width = total_width;
-            containing_block.content.height = Font::new_from_style(layout_box.get_style_node()).ascent;
+            {
+                let mut containing_block = containing_block.borrow_mut();
+                containing_block.content.width = total_width;
+                containing_block.content.height =
+                    Font::new_from_style(layout_box.get_style_node()).ascent;
+            }
             self.new_boxes.push(layout_box.clone());
         } else {
             self.pending_line.range.end -= 1;
@@ -172,38 +184,60 @@ impl<'a> LineBreaker<'a> {
             _ => unreachable!(),
         };
 
-        let mut d = layout_box.dimensions.borrow_mut();
         let text_width = self.text_width(node);
 
-        let remaining_width = self.pending_line.green_zone.width - self.pending_line.bounds.content.width;
+        let remaining_width =
+            self.pending_line.green_zone.width - self.pending_line.bounds.content.width;
 
         if text_width > remaining_width || self.pending_line.is_line_broken {
             // TODO: assign remaining character
             // TODO: create new text node
-            self.pending_line.range.end -= 1;
-            self.pending_line.is_line_broken = true;
-            // let result = node.calculate_split_position(remaining_width);
+            if self.pending_line.is_line_broken {
+                self.pending_line.range.end -= 1;
+                return;
+            }
 
-            // match result {
-            //     (Some(inline_start), Some(inline_end)) => {
-            //         // 
-            //     },
-            //     (Some(inline_start), None) => {},
-            //     (None, Some(inline_end)) => {
-            //         node.range = inline_end.range;
-            //     },
-            //     (None, None) => {},
-            // }
-            self.work_list.push_front(layout_box.clone());
+            self.pending_line.is_line_broken = true;
+
+            let (inline_start, inline_end) = node.calculate_split_position(node, remaining_width);
+
+            if let Some(inline_start) = inline_start {
+                node.range = inline_start.range;
+                let metrics = self
+                    .pending_line
+                    .metrics
+                    .calc_space(node, node.styled_node.line_height());
+                {
+                    let mut d = layout_box.dimensions.borrow_mut();
+                    d.content.height = node.font.ascent + node.font.descent;
+                    // Maybe, this calculation is specific case for `iced`
+                    d.content.y -= metrics.leading / 2.;
+                    d.content.width = self.text_width(node);
+                }
+                self.new_boxes.push(layout_box.clone());
+            }
+
+            if let Some(inline_end) = inline_end {
+                let mut new_layout_box = layout_box.clone();
+                let mut node = match &mut new_layout_box.box_type {
+                    BoxType::TextNode(node) => node,
+                    _ => unreachable!(),
+                };
+                node.range = inline_end.range;
+                self.work_list.push_front(new_layout_box);
+            }
         } else {
             let metrics = self
                 .pending_line
                 .metrics
                 .calc_space(node, node.styled_node.line_height());
-            d.content.height = node.font.ascent + node.font.descent;
-            // Maybe, this calculation is specific case for `iced`
-            d.content.y -= metrics.leading / 2.;
-            d.content.width = text_width;
+            {
+                let mut d = layout_box.dimensions.borrow_mut();
+                d.content.height = node.font.ascent + node.font.descent;
+                // Maybe, this calculation is specific case for `iced`
+                d.content.y -= metrics.leading / 2.;
+                d.content.width = text_width;
+            }
             self.pending_line.bounds.content.width += text_width;
             self.new_boxes.push(layout_box.clone());
         }
@@ -223,12 +257,7 @@ impl<'a> LineBreaker<'a> {
     }
 
     fn text_width(&self, node: &TextNode<'a>) -> f32 {
-        let styled_node = node.styled_node;
-        let text = if let NodeType::Text(text) = &styled_node.node.node_type {
-            text
-        } else {
-            unreachable!();
-        };
+        let text = node.get_text();
         // TODO: optimize to load font only once
         node.font.width(text)
     }
@@ -275,7 +304,8 @@ impl<'a> InlineBox<'a> {
         for line in &line_breaker.lines {
             let mut line_box_x = line.bounds.content.x;
             for item in &mut line_breaker.new_boxes[line.range.clone()] {
-                let new_rect_y = line_breaker.cur_height + line.bounds.content.y + line.metrics.leading;
+                let new_rect_y =
+                    line_breaker.cur_height + line.bounds.content.y + line.metrics.leading;
                 {
                     let mut d = item.dimensions.borrow_mut();
                     d.content.x += line_box_x + d.margin_left_offset();

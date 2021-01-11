@@ -5,6 +5,8 @@ use std::collections::VecDeque;
 use std::mem;
 use std::iter::Iterator;
 use std::ops::Range;
+use std::rc::Rc;
+use std::cell::RefCell;
 
 #[derive(Clone)]
 struct Line {
@@ -71,8 +73,8 @@ impl<'a> LineBreaker<'a> {
     where
         I: Iterator<Item = LayoutBox<'a>>
     {
-        while let Some(layout_box) = self.next_layout_box(iter_old_boxes) {
-            self.layout(root, &layout_box);
+        while let Some(layout_box) = &mut self.next_layout_box(iter_old_boxes) {
+            self.layout(root, layout_box);
             if self.pending_line.is_line_broken {
                 self.flush_current_line();
             }
@@ -83,7 +85,7 @@ impl<'a> LineBreaker<'a> {
         }
     }
 
-    fn layout(&mut self, root: &Dimensions, layout_box: &LayoutBox<'a>) {
+    fn layout(&mut self, root: &Dimensions, layout_box: &mut LayoutBox<'a>) {
         if self.pending_line_is_empty() {
             let line_bounds = self.initial_line_placement(root, layout_box);
             self.pending_line.bounds.content.x = line_bounds.content.x;
@@ -96,63 +98,102 @@ impl<'a> LineBreaker<'a> {
             }
         }
 
-        // TODO: Check inline box is fit in green_zone
         self.pending_line.range.end += 1;
 
         match &layout_box.box_type {
             BoxType::InlineNode(_) => self.layout_inline(root, layout_box),
-            BoxType::TextNode(node) => self.layout_text(node, layout_box),
+            BoxType::TextNode(_) => self.layout_text(layout_box),
             BoxType::BlockNode(_) => unimplemented!(),
             _ => unreachable!(),
         }
     }
 
-    fn layout_inline(&mut self, root: &Dimensions, layout_box: &LayoutBox<'a>) {
+    fn layout_inline(&mut self, root: &Dimensions, layout_box: &mut LayoutBox<'a>) {
         layout_box.assign_horizontal_margin_box();
         layout_box.assign_vertical_margin_box();
 
-        self.calculate_inline_descendant_position(root, layout_box);
+        {
+            let d = layout_box.dimensions.borrow();
+            self.pending_line.bounds.content.width += d.margin_left_offset() + d.margin_right_offset();
+        }
 
-        self.new_boxes.push(layout_box.clone());
+        self.calculate_inline_descendant_position(root, layout_box);
     }
 
-    fn calculate_inline_descendant_position(&mut self, root: &Dimensions, layout_box: &LayoutBox<'a>) {
+    fn calculate_inline_descendant_position(&mut self, root: &Dimensions, layout_box: &mut LayoutBox<'a>) {
         let mut total_width = 0.;
         let mut containing_block = layout_box.dimensions.borrow_mut();
-        for child in &layout_box.children {
+        let mut new_children = vec![];
+        let mut broken_line_children = vec![];
+
+        for child in &mut layout_box.children {
             self.layout(root, child);
 
             if self.pending_line.is_line_broken {
-                break;
+                self.work_list.pop_front();
+                broken_line_children.push(child.clone());
+                continue;
             }
 
-            let mut d = child.dimensions.borrow_mut();
-            let margin_box = d.margin_horizontal_box();
-            d.content.x = total_width + containing_block.margin_left_offset();
-            total_width += margin_box.width;
+            {
+                let mut d = child.dimensions.borrow_mut();
+                let margin_box = d.margin_horizontal_box();
+                d.content.x = total_width + containing_block.margin_left_offset();
+                total_width += margin_box.width;
+            }
+
+            new_children.push(child.clone());
 
             // Remove descendant from new_boxes
             self.pending_line.range.end -= 1;
             self.new_boxes.pop();
         }
-        
-        self.pending_line.bounds.content.width += containing_block.margin_left_offset() + containing_block.margin_right_offset();
 
-        containing_block.content.width = total_width;
-        containing_block.content.height = Font::new_from_style(layout_box.get_style_node()).ascent;
+        if self.pending_line.is_line_broken && broken_line_children.len() != 0 {
+            let mut new_layout_box = layout_box.clone();
+            new_layout_box.dimensions = Rc::new(RefCell::new(containing_block.clone()));
+            new_layout_box.children = broken_line_children;
+            self.work_list.push_front(new_layout_box);
+        }
+
+        if new_children.len() != 0 {
+            layout_box.children = new_children;
+            containing_block.content.width = total_width;
+            containing_block.content.height = Font::new_from_style(layout_box.get_style_node()).ascent;
+            self.new_boxes.push(layout_box.clone());
+        } else {
+            self.pending_line.range.end -= 1;
+        }
     }
 
-    fn layout_text(&mut self, node: &TextNode, layout_box: &LayoutBox<'a>) {
+    fn layout_text(&mut self, layout_box: &mut LayoutBox<'a>) {
+        let mut node = match &mut layout_box.box_type {
+            BoxType::TextNode(node) => node,
+            _ => unreachable!(),
+        };
+
         let mut d = layout_box.dimensions.borrow_mut();
         let text_width = self.text_width(node);
 
         let remaining_width = self.pending_line.green_zone.width - self.pending_line.bounds.content.width;
 
-        if text_width > remaining_width {
+        if text_width > remaining_width || self.pending_line.is_line_broken {
             // TODO: assign remaining character
             // TODO: create new text node
             self.pending_line.range.end -= 1;
             self.pending_line.is_line_broken = true;
+            // let result = node.calculate_split_position(remaining_width);
+
+            // match result {
+            //     (Some(inline_start), Some(inline_end)) => {
+            //         // 
+            //     },
+            //     (Some(inline_start), None) => {},
+            //     (None, Some(inline_end)) => {
+            //         node.range = inline_end.range;
+            //     },
+            //     (None, None) => {},
+            // }
             self.work_list.push_front(layout_box.clone());
         } else {
             let metrics = self
@@ -199,18 +240,6 @@ impl<'a> LineBreaker<'a> {
     fn flush_current_line(&mut self) {
         self.lines.push(self.pending_line.clone());
         self.pending_line = Line::new(Default::default());
-    }
-
-    fn calculate_split_position(&self) {
-        // 1. 一文字づつadvanced_widthを確認していく
-        // 2. そのadvanced_widthを基に残りのwidthを計算していく
-        // 3. advanced_widthが、残りのwidthより大きい場合、そこがbreak pointとなる(inline_start)
-        //    ただし、foo<span>bar</span>のような場合、fooとbarの間で改行することはしない
-        // 4. 残りのwidthを超えた文字列の位置から最後までの位置(inline_end)を記憶しておく
-        // 5. inline_start、inline_endのrangeをTextNodeのrangeに入れて、新しいTextNodeを作る
-        // 6. inline_startとinline_endが存在する場合は、inline_startのrightのborder, paddingを0に、
-        //    inline_endのleftのborder, paddingを0にする
-        // 7. inline_startをLineBreaker::linesに入れて、inline_endをwork_listにいれる
     }
 }
 

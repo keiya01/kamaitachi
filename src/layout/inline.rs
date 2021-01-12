@@ -111,11 +111,15 @@ impl<'a> LineBreaker<'a> {
 
         {
             let d = layout_box.dimensions.borrow();
-            self.pending_line.bounds.content.width +=
-                d.margin_left_offset() + d.margin_right_offset();
+            self.pending_line.bounds.content.width += d.margin_left_offset();
         }
-
+        
         self.calculate_inline_descendant_position(root, layout_box);
+
+        {
+            let d = layout_box.dimensions.borrow();
+            self.pending_line.bounds.content.width += d.margin_right_offset();
+        }
     }
 
     fn calculate_inline_descendant_position(
@@ -128,6 +132,7 @@ impl<'a> LineBreaker<'a> {
         let mut new_children = vec![];
         let mut broken_line_children = vec![];
 
+        let mut i = 0;
         for child in &mut layout_box.children {
             self.layout(root, child);
 
@@ -147,8 +152,17 @@ impl<'a> LineBreaker<'a> {
             {
                 let mut d = child.dimensions.borrow_mut();
                 let margin_box = d.margin_horizontal_box();
-                d.content.x = total_width + containing_block.borrow().margin_left_offset();
-                total_width += margin_box.width;
+                if self.lines.len() != 0 {
+                    d.content.x += total_width;
+                    if i == 0 {
+                        total_width += margin_box.width - d.margin_left_offset();
+                    } else {
+                        total_width += margin_box.width;
+                    }
+                } else {
+                    d.content.x += total_width + containing_block.borrow().margin_left_offset();
+                    total_width += margin_box.width;
+                }
             }
 
             new_children.push(child.clone());
@@ -156,6 +170,7 @@ impl<'a> LineBreaker<'a> {
             // Remove descendant from new_boxes
             self.pending_line.range.end -= 1;
             self.new_boxes.pop();
+            i += 1;
         }
 
         if self.pending_line.is_line_broken && broken_line_children.len() != 0 {
@@ -270,6 +285,30 @@ impl<'a> LineBreaker<'a> {
         self.lines.push(self.pending_line.clone());
         self.pending_line = Line::new(Default::default());
     }
+
+    fn reset_line_edge(&mut self) {
+        if self.lines.len() == 0 {
+            return;
+        }
+
+        let mut line_index = 0;
+        let last_line_index = self.lines.len() - 1;
+        for line in &self.lines {
+            let box_list = &mut self.new_boxes[line.range.clone()];
+            if box_list.len() == 0 {
+                break;
+            }
+            if line_index != 0 {
+                let item = &mut box_list[0];
+                item.reset_edge_left();
+            }
+            if line_index != last_line_index {
+                let item = &mut box_list[box_list.len() - 1];
+                item.reset_edge_right();
+            }
+            line_index += 1;
+        }
+    }
 }
 
 pub struct InlineBox<'a> {
@@ -294,6 +333,7 @@ impl<'a> InlineBox<'a> {
         let old_boxes = mem::replace(&mut self.boxes, Vec::new());
         let mut iter_old_boxes = old_boxes.into_iter();
         line_breaker.scan_for_line(&self.root, &mut iter_old_boxes);
+        line_breaker.reset_line_edge();
         self.assign_position(&mut line_breaker);
         self.boxes = line_breaker.new_boxes;
         self.width = line_breaker.max_width;

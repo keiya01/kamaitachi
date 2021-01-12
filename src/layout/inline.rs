@@ -111,15 +111,10 @@ impl<'a> LineBreaker<'a> {
 
         {
             let d = layout_box.dimensions.borrow();
-            self.pending_line.bounds.content.width += d.margin_left_offset();
+            self.pending_line.bounds.content.width += d.margin_left_offset() + d.margin_right_offset();
         }
         
         self.calculate_inline_descendant_position(root, layout_box);
-
-        {
-            let d = layout_box.dimensions.borrow();
-            self.pending_line.bounds.content.width += d.margin_right_offset();
-        }
     }
 
     fn calculate_inline_descendant_position(
@@ -194,7 +189,7 @@ impl<'a> LineBreaker<'a> {
     }
 
     fn layout_text(&mut self, layout_box: &mut LayoutBox<'a>) {
-        let mut node = match &mut layout_box.box_type {
+        let node = match &mut layout_box.box_type {
             BoxType::TextNode(node) => node,
             _ => unreachable!(),
         };
@@ -204,9 +199,7 @@ impl<'a> LineBreaker<'a> {
         let remaining_width =
             self.pending_line.green_zone.width - self.pending_line.bounds.content.width;
 
-        if text_width > remaining_width || self.pending_line.is_line_broken {
-            // TODO: assign remaining character
-            // TODO: create new text node
+        if text_width >= remaining_width || self.pending_line.is_line_broken {
             if self.pending_line.is_line_broken {
                 self.pending_line.range.end -= 1;
                 return;
@@ -217,18 +210,24 @@ impl<'a> LineBreaker<'a> {
             let (inline_start, inline_end) = node.calculate_split_position(node, remaining_width);
 
             if let Some(inline_start) = inline_start {
+                let mut node = match &mut layout_box.box_type {
+                    BoxType::TextNode(node) => node,
+                    _ => unreachable!(),
+                };
                 node.range = inline_start.range;
                 let metrics = self
                     .pending_line
                     .metrics
                     .calc_space(node, node.styled_node.line_height());
+                let text_width = self.text_width(node);
                 {
                     let mut d = layout_box.dimensions.borrow_mut();
                     d.content.height = node.font.ascent + node.font.descent;
                     // Maybe, this calculation is specific case for `iced`
                     d.content.y -= metrics.leading / 2.;
-                    d.content.width = self.text_width(node);
+                    d.content.width = text_width;
                 }
+                self.pending_line.bounds.content.width += text_width;
                 self.new_boxes.push(layout_box.clone());
             }
 
@@ -239,6 +238,7 @@ impl<'a> LineBreaker<'a> {
                     _ => unreachable!(),
                 };
                 node.range = inline_end.range;
+                new_layout_box.dimensions.borrow_mut().content.y = 0.;
                 self.work_list.push_front(new_layout_box);
             }
         } else {

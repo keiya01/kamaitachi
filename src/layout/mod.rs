@@ -411,15 +411,6 @@ impl<'a> TextNode<'a> {
         text_node: &TextNode,
         remaining_width: f32,
     ) -> (Option<SplitInfo>, Option<SplitInfo>) {
-        // 1. 一文字づつadvanced_widthを確認していく
-        // 2. そのadvanced_widthを基に残りのwidthを計算していく
-        // 3. advanced_widthが、残りのwidthより大きい場合、そこがbreak pointとなる(inline_start)
-        //    ただし、foo<span>bar</span>のような場合、fooとbarの間で改行することはしない
-        // 4. 残りのwidthを超えた文字列の位置から最後までの位置(inline_end)を記憶しておく
-        // 5. inline_start、inline_endのrangeをTextNodeのrangeに入れて、新しいTextNodeを作る
-        // 6. inline_startとinline_endが存在する場合は、inline_startのrightのborder, paddingを0に、
-        //    inline_endのleftのborder, paddingを0にする
-        // 7. inline_startをLineBreaker::linesに入れて、inline_endをwork_listにいれる
         let text = text_node.get_text();
 
         let mut total_width = 0.0;
@@ -429,14 +420,16 @@ impl<'a> TextNode<'a> {
         for (i, c) in text.chars().enumerate() {
             let advanced_width = scaled_font.h_advance(scaled_font.glyph_id(c));
             total_width += advanced_width;
-            if total_width > remaining_width {
+            if total_width >= remaining_width {
                 break_point = i;
                 break;
             }
         }
 
-        let inline_start = SplitInfo::new(0..break_point);
-        let inline_end = SplitInfo::new(break_point..text.len());
+        break_point += text_node.range.start + 1;
+
+        let inline_start = SplitInfo::new(text_node.range.start..break_point);
+        let inline_end = SplitInfo::new(break_point..text_node.range.end);
 
         (Some(inline_start), Some(inline_end))
     }

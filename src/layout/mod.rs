@@ -350,6 +350,27 @@ impl<'a> LayoutBox<'a> {
         d.padding.left = node.lookup("padding-left", "padding", &zero).to_px();
         d.padding.right = node.lookup("padding-right", "padding", &zero).to_px();
     }
+
+    fn reset_edge_left(&mut self) {
+        let mut d = self.dimensions.borrow_mut();
+        d.margin.left = 0.;
+        d.border.left = 0.;
+        d.padding.left = 0.;
+        if self.children.len() != 0 {
+            self.children[0].reset_edge_left();
+        }
+    }
+
+    fn reset_edge_right(&mut self) {
+        let mut d = self.dimensions.borrow_mut();
+        d.margin.right = 0.;
+        d.border.right = 0.;
+        d.padding.right = 0.;
+        let len = self.children.len();
+        if len != 0 {
+            self.children[len - 1].reset_edge_right();
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

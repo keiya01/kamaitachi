@@ -215,6 +215,13 @@ impl<'a> LineBreaker<'a> {
                     _ => unreachable!(),
                 };
                 node.range = inline_start.range.clone();
+
+                // remove whitespace on line end.
+                // TODO: text should has only one whitespace.
+                if node.get_text().chars().last().unwrap().is_whitespace() {
+                    node.range.end -= 1;
+                }
+
                 let metrics = self
                     .pending_line
                     .metrics

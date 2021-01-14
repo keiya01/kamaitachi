@@ -6,7 +6,7 @@ span {
   display: inline;
   padding: 3px;
   margin: 5px;
-  border-color: #b8860b;
+  border-color: #ff0f0f;
   border-left-width: 1px;
   border-top-width: 1px;
   border-right-width: 1px;
@@ -16,12 +16,16 @@ span {
 .container {
   font-size: 20px;
   padding: 10px;
-  background: #000000;
 }
 
 .world {
   background: #0f00f0;
   color: #ff00ff;
+}
+
+.wasm {
+  background: #000000;
+  color: #ffffff;
 }
 
 .hey {

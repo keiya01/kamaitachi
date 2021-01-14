@@ -160,21 +160,6 @@ impl<'a> LineBreaker<'a> {
                 if let Some(layout_box) = self.work_list.pop_front() {
                     broken_line_children.push(layout_box.clone());
                 }
-
-                if self.pending_line.line_state.inline_start.is_some() {
-                    let mut d = containing_block.borrow_mut();
-                    d.margin.right = 0.;
-                    d.border.right = 0.;
-                    d.padding.right = 0.;
-                }
-
-                if self.pending_line.line_state.inline_end.is_some() {
-                    let mut end_d = end_layout_box.dimensions.borrow_mut();
-                    end_d.margin.left = 0.;
-                    end_d.border.left = 0.;
-                    end_d.padding.left = 0.;
-                    end_layout_box.is_splitted = true;
-                }
             }
 
             {
@@ -188,17 +173,23 @@ impl<'a> LineBreaker<'a> {
             new_children.push(child.clone());
         }
 
+        // inline_end
         if self.pending_line.is_line_broken && broken_line_children.len() != 0 {
             end_layout_box.children = broken_line_children;
+            end_layout_box.reset_edge_left();
             self.work_list.push_front(end_layout_box);
         }
 
+        // inline_start
         layout_box.children = new_children;
         {
             let mut containing_block = containing_block.borrow_mut();
             containing_block.content.width = total_width;
             containing_block.content.height =
                 Font::new_from_style(layout_box.get_style_node()).ascent;
+        }
+        if self.pending_line.line_state.inline_end.is_some() {
+            layout_box.reset_edge_right();
         }
     }
 

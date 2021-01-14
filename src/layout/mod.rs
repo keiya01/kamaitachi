@@ -388,6 +388,8 @@ impl<'a> TextNode<'a> {
         &text[self.range.clone()]
     }
 
+    // TODO: stop splitting just before inline box
+    // TODO: consider if inline_start is NONE
     fn calculate_split_position(
         &self,
         text_node: &TextNode,
@@ -396,7 +398,11 @@ impl<'a> TextNode<'a> {
         let text = text_node.get_text();
 
         let mut total_width = 0.0;
+        // priority: 1
+        let mut space_position: Option<usize> = None;
+        // priority: 2
         let mut break_point: usize = text.len();
+
         let font_ref = text_node.font.as_ref();
         let scaled_font = font_ref.as_scaled(PxScale::from(text_node.font.size));
         for (i, c) in text.chars().enumerate() {
@@ -405,11 +411,18 @@ impl<'a> TextNode<'a> {
             if total_width > remaining_width {
                 break;
             }
+            if c.is_whitespace() {
+                space_position = Some(i);
+            }
             break_point = i;
         }
-
+        
+        if let Some(pos) = space_position {
+            break_point = pos;
+        }
+    
         break_point += text_node.range.start + 1;
-
+        
         let inline_start = SplitInfo::new(text_node.range.start..break_point);
         let mut inline_end = None;
 

@@ -115,6 +115,8 @@ pub struct LayoutBox<'a> {
     pub dimensions: Rc<RefCell<Dimensions>>,
     pub box_type: BoxType<'a>,
     pub children: Vec<LayoutBox<'a>>,
+    /// used for line breaking
+    pub is_splitted: bool,
 }
 
 impl<'a> Clone for LayoutBox<'a> {
@@ -133,6 +135,7 @@ impl<'a> LayoutBox<'a> {
             box_type,
             dimensions: Rc::new(RefCell::new(Default::default())),
             children: vec![],
+            is_splitted: false
         }
     }
 
@@ -350,27 +353,6 @@ impl<'a> LayoutBox<'a> {
         d.padding.left = node.lookup("padding-left", "padding", &zero).to_px();
         d.padding.right = node.lookup("padding-right", "padding", &zero).to_px();
     }
-
-    fn reset_edge_left(&mut self) {
-        let mut d = self.dimensions.borrow_mut();
-        d.margin.left = 0.;
-        d.border.left = 0.;
-        d.padding.left = 0.;
-        if self.children.len() != 0 {
-            self.children[0].reset_edge_left();
-        }
-    }
-
-    fn reset_edge_right(&mut self) {
-        let mut d = self.dimensions.borrow_mut();
-        d.margin.right = 0.;
-        d.border.right = 0.;
-        d.padding.right = 0.;
-        let len = self.children.len();
-        if len != 0 {
-            self.children[len - 1].reset_edge_right();
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -420,21 +402,26 @@ impl<'a> TextNode<'a> {
         for (i, c) in text.chars().enumerate() {
             let advanced_width = scaled_font.h_advance(scaled_font.glyph_id(c));
             total_width += advanced_width;
-            if total_width >= remaining_width {
-                break_point = i;
+            if total_width > remaining_width {
                 break;
             }
+            break_point = i;
         }
 
         break_point += text_node.range.start + 1;
 
         let inline_start = SplitInfo::new(text_node.range.start..break_point);
-        let inline_end = SplitInfo::new(break_point..text_node.range.end);
+        let mut inline_end = None;
 
-        (Some(inline_start), Some(inline_end))
+        if break_point != text_node.range.end {
+            inline_end = Some(SplitInfo::new(break_point..text_node.range.end));
+        }
+
+        (Some(inline_start), inline_end)
     }
 }
 
+#[derive(Clone)]
 pub struct SplitInfo {
     range: Range<usize>,
 }

@@ -4,9 +4,11 @@ mod inline;
 use crate::cssom::{Unit, Value};
 use crate::dom::NodeType;
 use crate::style::*;
+use font::{GlyphBrushFont, PxScale, ScaleFont};
 use inline::InlineBox;
 use std::cell::RefCell;
 use std::mem;
+use std::ops::Range;
 use std::rc::Rc;
 
 // CSS box model. All sizes are in px.
@@ -108,11 +110,23 @@ pub struct EdgeSizes {
     pub bottom: f32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct LayoutBox<'a> {
     pub dimensions: Rc<RefCell<Dimensions>>,
     pub box_type: BoxType<'a>,
     pub children: Vec<LayoutBox<'a>>,
+    /// used for line breaking
+    pub is_splitted: bool,
+}
+
+impl<'a> Clone for LayoutBox<'a> {
+    fn clone(&self) -> LayoutBox<'a> {
+        let mut layout_box = LayoutBox::new(self.box_type.clone());
+        let d = self.dimensions.borrow();
+        layout_box.dimensions = Rc::new(RefCell::new(d.clone()));
+        layout_box.children = self.children.clone();
+        layout_box
+    }
 }
 
 impl<'a> LayoutBox<'a> {
@@ -121,6 +135,7 @@ impl<'a> LayoutBox<'a> {
             box_type,
             dimensions: Rc::new(RefCell::new(Default::default())),
             children: vec![],
+            is_splitted: false
         }
     }
 
@@ -136,15 +151,17 @@ impl<'a> LayoutBox<'a> {
         match self.box_type {
             BoxType::BlockNode(_) => self.layout_block(containing_block),
             BoxType::AnonymousBlock => {
+                let containing_block = containing_block.borrow();
                 {
                     let mut d = self.dimensions.borrow_mut();
-                    let containing_block = containing_block.borrow();
                     d.content.x = containing_block.content.x;
                     d.content.y = containing_block.content.y;
                 }
                 // Anonymous block is including only inline box in children
-                let mut inline_box =
-                    InlineBox::new(self.clone(), mem::replace(&mut self.children, Vec::new()));
+                let mut inline_box = InlineBox::new(
+                    containing_block.clone(),
+                    mem::replace(&mut self.children, Vec::new()),
+                );
                 inline_box.process();
                 let mut d = self.dimensions.borrow_mut();
                 d.content.width = inline_box.width;
@@ -336,6 +353,29 @@ impl<'a> LayoutBox<'a> {
         d.padding.left = node.lookup("padding-left", "padding", &zero).to_px();
         d.padding.right = node.lookup("padding-right", "padding", &zero).to_px();
     }
+
+    fn reset_edge_left(&mut self) {
+        self.is_splitted = true;
+        let mut d = self.dimensions.borrow_mut();
+        d.margin.left = 0.;
+        d.border.left = 0.;
+        d.padding.left = 0.;
+        if self.children.len() != 0 {
+            self.children[0].reset_edge_left();
+        }
+    }
+
+    fn reset_edge_right(&mut self) {
+        self.is_splitted = true;
+        let mut d = self.dimensions.borrow_mut();
+        d.margin.right = 0.;
+        d.border.right = 0.;
+        d.padding.right = 0.;
+        let len = self.children.len();
+        if len != 0 {
+            self.children[len - 1].reset_edge_right();
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -350,12 +390,87 @@ pub enum BoxType<'a> {
 pub struct TextNode<'a> {
     pub styled_node: &'a StyledNode<'a>,
     pub font: font::Font,
+    pub range: Range<usize>,
 }
 
 impl<'a> TextNode<'a> {
-    fn new(styled_node: &'a StyledNode<'a>) -> TextNode<'a> {
+    fn new(styled_node: &'a StyledNode<'a>, content: &str) -> TextNode<'a> {
         let font = font::Font::new(None, styled_node.font_size());
-        TextNode { styled_node, font }
+        TextNode {
+            styled_node,
+            font,
+            range: 0..content.len(),
+        }
+    }
+
+    pub fn get_text(&self) -> &str {
+        let text = match &self.styled_node.node.node_type {
+            NodeType::Text(text) => text,
+            _ => unreachable!(),
+        };
+        &text[self.range.clone()]
+    }
+
+    // TODO: stop splitting just before inline box
+    // TODO: consider if inline_start is NONE
+    fn calculate_split_position(
+        &self,
+        text_node: &TextNode,
+        remaining_width: f32,
+    ) -> (Option<SplitInfo>, Option<SplitInfo>) {
+        let text = text_node.get_text();
+
+        let mut total_width = 0.0;
+        // priority: 1
+        let mut space_position: Option<usize> = None;
+        // priority: 2
+        let mut break_point: usize = text.len();
+
+        let font_ref = text_node.font.as_ref();
+        let scaled_font = font_ref.as_scaled(PxScale::from(text_node.font.size));
+        for (i, c) in text.chars().enumerate() {
+            let advanced_width = scaled_font.h_advance(scaled_font.glyph_id(c));
+            total_width += advanced_width;
+            if total_width > remaining_width {
+                break;
+            }
+            if c.is_whitespace() {
+                space_position = Some(i);
+            }
+            break_point = i;
+        }
+        
+        if let Some(pos) = space_position {
+            break_point = pos;
+        }
+    
+        break_point += text_node.range.start + 1;
+        
+        let inline_start = SplitInfo::new(text_node.range.start..break_point);
+        let mut inline_end = None;
+
+        if break_point != text_node.range.end {
+            inline_end = Some(SplitInfo::new(break_point..text_node.range.end));
+        }
+
+        (Some(inline_start), inline_end)
+    }
+}
+
+#[derive(Clone)]
+pub struct SplitInfo {
+    range: Range<usize>,
+}
+
+impl SplitInfo {
+    pub fn new(range: Range<usize>) -> SplitInfo {
+        SplitInfo { range }
+    }
+}
+
+impl Default for SplitInfo {
+    fn default() -> SplitInfo {
+        SplitInfo::new(0..0)
     }
 }
 
@@ -375,9 +490,9 @@ pub fn layout_tree<'a>(
 pub fn build_layout_tree<'a>(style_node: &'a StyledNode<'a>) -> LayoutBox<'a> {
     let mut root = LayoutBox::new(match style_node.display() {
         Display::Block => BoxType::BlockNode(style_node),
-        Display::Inline => match style_node.node.node_type {
+        Display::Inline => match &style_node.node.node_type {
             NodeType::Element(_) => BoxType::InlineNode(style_node),
-            NodeType::Text(_) => BoxType::TextNode(TextNode::new(style_node)),
+            NodeType::Text(content) => BoxType::TextNode(TextNode::new(style_node, content)),
         },
         Display::None => panic!("Root node must has `display: none;`."),
     });

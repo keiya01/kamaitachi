@@ -1,14 +1,12 @@
 pub use font_kit::family_name::FamilyName;
 pub use font_kit::handle::Handle;
+pub use glyph_brush::ab_glyph::{Font as GlyphBrushFont, PxScale, ScaleFont};
 
 use core_text::font::CTFont;
 use font_kit::font;
 use font_kit::properties::Properties;
 use font_kit::source::SystemSource;
-use glyph_brush::{
-    ab_glyph::{FontArc, PxScale},
-    GlyphBrush, GlyphBrushBuilder, GlyphCruncher, Section, Text,
-};
+use glyph_brush::ab_glyph::FontRef;
 
 use crate::style::StyledNode;
 
@@ -53,6 +51,11 @@ impl Font {
         }
     }
 
+    pub fn as_ref(&self) -> FontRef {
+        // TODO: optimize memory leak
+        FontRef::try_from_slice(self.get_static_font_data()).unwrap()
+    }
+
     // TODO: cache font data with font-size and font-family
     pub fn new_from_style(style: &StyledNode) -> Font {
         Font::new(style.font_family(), style.font_size())
@@ -70,16 +73,14 @@ impl Font {
     }
 
     pub fn width(&self, text: &str) -> f32 {
-        let font_byte = FontArc::try_from_slice(self.get_static_font_data()).unwrap();
-        let mut measure_brush: GlyphBrush<()> = GlyphBrushBuilder::using_font(font_byte).build();
-        let bounds = measure_brush.glyph_bounds(
-            Section::default().add_text(Text::new(text).with_scale(PxScale::from(self.size))),
-        );
-
-        match bounds {
-            Some(rect) => rect.width().ceil(),
-            None => 0.,
+        let font_ref = self.as_ref();
+        let scaled_font = font_ref.as_scaled(PxScale::from(self.size));
+        let mut total_width = 0.;
+        for c in text.chars() {
+            let advanced_width = scaled_font.h_advance(scaled_font.glyph_id(c));
+            total_width += advanced_width;
         }
+        total_width
     }
 
     pub fn get_static_font_data(&self) -> &'static [u8] {

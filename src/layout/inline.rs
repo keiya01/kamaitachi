@@ -337,7 +337,7 @@ impl<'a> InlineBox<'a> {
                 }
                 if let BoxType::InlineNode(_) = item.box_type {
                     let line_box_x = { line_box_x + item.dimensions.borrow().margin_left_offset() };
-                    self.recursive_position(item, line_box_x, new_rect_y);
+                    self.calculate_child_position(item, line_box_x, new_rect_y);
                 }
                 let d = item.dimensions.borrow();
                 let margin_box = d.margin_horizontal_box();
@@ -350,7 +350,7 @@ impl<'a> InlineBox<'a> {
         }
     }
 
-    fn recursive_position(
+    fn calculate_child_position(
         &self,
         layout_box: &mut LayoutBox<'a>,
         additional_rect_x: f32,

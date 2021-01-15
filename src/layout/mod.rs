@@ -421,14 +421,19 @@ impl<'a> TextNode<'a> {
         let text = text_node.get_text();
 
         let mut total_width = 0.0;
+        let mut start_position: Option<usize> = None;
+
         // priority: 1
         let mut space_position: Option<usize> = None;
         // priority: 2
-        let mut break_point: usize = text.len();
+        let mut break_point = text.len();
 
         let font_ref = text_node.font.as_ref();
         let scaled_font = font_ref.as_scaled(PxScale::from(text_node.font.size));
-        for (i, c) in text.chars().enumerate() {
+        for (i, c) in text.char_indices() {
+            if start_position.is_none() {
+                start_position = Some(c.len_utf8());
+            }
             let advanced_width = scaled_font.h_advance(scaled_font.glyph_id(c));
             total_width += advanced_width;
             if total_width > remaining_width {
@@ -444,8 +449,8 @@ impl<'a> TextNode<'a> {
             break_point = pos;
         }
 
-        break_point += text_node.range.start + 1;
-
+        break_point += text_node.range.start + start_position.unwrap();
+        
         let inline_start = SplitInfo::new(text_node.range.start..break_point);
         let mut inline_end = None;
 

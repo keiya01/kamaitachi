@@ -363,7 +363,7 @@ impl<'a> InlineBox<'a> {
                     let d = child.dimensions.borrow();
                     new_rect_x + d.margin_left_offset()
                 };
-                self.recursive_position(child, new_rect_x, additional_rect_y);
+                self.calculate_child_position(child, new_rect_x, additional_rect_y);
             }
 
             let mut d = child.dimensions.borrow_mut();

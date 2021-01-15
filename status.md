@@ -19,6 +19,10 @@
     - inline-start: left-top of containing block 
     - inline-end: text width
 - [x] style inheritance
-- [ ] line break
+- [x] line break
+  - [x] `line-break: auto;`
+  - [x] `word-break: normal;`
+  - [ ] `word-break: break-all;` ... for japanese
+  - [x] `overflow-wrap: normal;`
 - [ ] white space
 - [ ] vertical align, text-align

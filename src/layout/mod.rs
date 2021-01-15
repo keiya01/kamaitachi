@@ -135,7 +135,7 @@ impl<'a> LayoutBox<'a> {
             box_type,
             dimensions: Rc::new(RefCell::new(Default::default())),
             children: vec![],
-            is_splitted: false
+            is_splitted: false,
         }
     }
 
@@ -439,13 +439,13 @@ impl<'a> TextNode<'a> {
             }
             break_point = i;
         }
-        
+
         if let Some(pos) = space_position {
             break_point = pos;
         }
-    
+
         break_point += text_node.range.start + 1;
-        
+
         let inline_start = SplitInfo::new(text_node.range.start..break_point);
         let mut inline_end = None;
 

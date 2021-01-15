@@ -1,5 +1,5 @@
 use super::font::Font;
-use super::{BoxType, Dimensions, LayoutBox, Rect, TextNode, SplitInfo};
+use super::{BoxType, Dimensions, LayoutBox, Rect, SplitInfo, TextNode};
 use std::collections::VecDeque;
 use std::iter::Iterator;
 use std::mem;
@@ -13,7 +13,10 @@ struct LineState {
 
 impl LineState {
     fn new() -> LineState {
-        LineState { inline_start: None, inline_end: None }
+        LineState {
+            inline_start: None,
+            inline_end: None,
+        }
     }
 }
 
@@ -35,7 +38,7 @@ impl Line {
             green_zone: Default::default(),
             metrics: LineMetrics::new(),
             is_line_broken: false,
-            line_state: LineState::new()
+            line_state: LineState::new(),
         }
     }
 }

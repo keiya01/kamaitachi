@@ -6,8 +6,8 @@ pub use block::create_block;
 pub use text::create_text;
 
 use crate::cssom::{Color, Value};
-use crate::dom::NodeType;
 use crate::layout::{font, BoxType, LayoutBox, Rect};
+use font::{with_thread_local_font_context, FontCacheKey, FontContext};
 
 pub type DisplayList = Vec<DisplayCommand>;
 
@@ -19,17 +19,23 @@ pub enum DisplayCommand {
 
 pub fn build_display_list(layout_root: &LayoutBox) -> DisplayList {
     let mut list = vec![];
-    render_layout_box(&mut list, layout_root);
+    with_thread_local_font_context(|font_context| {
+        render_layout_box(&mut list, layout_root, font_context)
+    });
     list
 }
 
-fn render_layout_box(list: &mut DisplayList, layout_box: &LayoutBox) {
+fn render_layout_box(
+    list: &mut DisplayList,
+    layout_box: &LayoutBox,
+    font_context: &mut FontContext,
+) {
     render_background(list, layout_box);
     render_borders(list, layout_box);
-    render_text(list, layout_box);
+    render_text(list, layout_box, font_context);
 
     for child in &layout_box.children {
-        render_layout_box(list, child);
+        render_layout_box(list, child, font_context);
     }
 }
 
@@ -104,7 +110,8 @@ fn render_borders(list: &mut DisplayList, layout_box: &LayoutBox) {
     }
 }
 
-fn render_text(list: &mut DisplayList, layout_box: &LayoutBox) {
+// TODO: remove font_context
+fn render_text(list: &mut DisplayList, layout_box: &LayoutBox, font_context: &mut FontContext) {
     let node = match &layout_box.box_type {
         BoxType::TextNode(node) => node,
         _ => return,
@@ -113,11 +120,21 @@ fn render_text(list: &mut DisplayList, layout_box: &LayoutBox) {
     let text = node.get_text();
 
     let color = get_color(layout_box, "color").unwrap_or_else(|| Color::new(0, 0, 0, 1.0));
+
+    // TODO: node.run_info_listのitemをloopしながら入れていく
+    // 座標やsizeはinline boxのlayout処理で行っておく
+    // layout_boxのdimensionsをrun_info.dimensionsで置き換える
+    // fontはrun_info.fontに持っておく
+
+    let font = font_context.get_or_create_by(FontCacheKey::new(
+        node.styled_node,
+        node.styled_node.font_family(),
+    ));
     list.push(DisplayCommand::Text(
         text.into(),
         color,
         layout_box.dimensions.borrow().content.clone(),
-        node.font.clone(),
+        font,
     ))
 }
 

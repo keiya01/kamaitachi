@@ -1,6 +1,5 @@
 // TODO
 // - [ ] Computed Values
-// - [ ] Inheritance
 // - [ ] Initial
 
 use std::collections::HashMap;
@@ -8,7 +7,7 @@ use std::collections::HashMap;
 use crate::{cssom, dom, layout, parser};
 use cssom::*;
 use dom::{ElementData, Node, NodeType};
-use layout::font::FamilyName;
+use layout::font::{FamilyName, FontStyle, FontWeight};
 use parser::css::CSSParser;
 
 // Map from CSS property names to values.
@@ -70,8 +69,9 @@ impl<'a> StyledNode<'a> {
             .unwrap_or_else(|| self.value(fallback_name).unwrap_or_else(|| default.clone()))
     }
 
-    pub fn font_family(&self) -> Option<&[FamilyName]> {
-        Some(&[FamilyName::SansSerif, FamilyName::Serif])
+    /// currently, this method return only default font
+    pub fn font_family(&self) -> FamilyName {
+        FamilyName::Serif
     }
 
     pub fn font_size(&self) -> f32 {
@@ -80,6 +80,35 @@ impl<'a> StyledNode<'a> {
             .unwrap_or_else(|| default_font_size)
             .to_px()
             * MEDIUM
+    }
+
+    pub fn font_style(&self) -> FontStyle {
+        let default_font_style = Value::Keyword("normal".to_string());
+        let val = self
+            .value("font-style")
+            .unwrap_or_else(|| default_font_style);
+        let keyword = match val {
+            Value::Keyword(s) => s,
+            _ => return FontStyle::Normal,
+        };
+        match &keyword[..] {
+            "italic" => FontStyle::Italic,
+            "oblique" => FontStyle::Oblique,
+            _ => FontStyle::Normal,
+        }
+    }
+
+    pub fn font_weight(&self) -> FontWeight {
+        let normal = 400.;
+        let default_font_weight = Value::Number(normal);
+        let val = self
+            .value("font-weight")
+            .unwrap_or_else(|| default_font_weight);
+        let num = match val {
+            Value::Number(n) => n,
+            _ => return FontWeight(normal),
+        };
+        FontWeight(num)
     }
 
     pub fn line_height(&self) -> f32 {

@@ -4,7 +4,7 @@ mod inline;
 use crate::cssom::{Unit, Value};
 use crate::dom::NodeType;
 use crate::style::*;
-use font::{GlyphBrushFont, PxScale, ScaleFont};
+use font::{Font, GlyphBrushFont, PxScale, ScaleFont};
 use inline::InlineBox;
 use std::cell::RefCell;
 use std::mem;
@@ -389,16 +389,13 @@ pub enum BoxType<'a> {
 #[derive(Debug, Clone)]
 pub struct TextNode<'a> {
     pub styled_node: &'a StyledNode<'a>,
-    pub font: font::Font,
     pub range: Range<usize>,
 }
 
 impl<'a> TextNode<'a> {
     fn new(styled_node: &'a StyledNode<'a>, content: &str) -> TextNode<'a> {
-        let font = font::Font::new(None, styled_node.font_size());
         TextNode {
             styled_node,
-            font,
             range: 0..content.len(),
         }
     }
@@ -417,6 +414,7 @@ impl<'a> TextNode<'a> {
         &self,
         text_node: &TextNode,
         remaining_width: f32,
+        font: &Font,
     ) -> (Option<SplitInfo>, Option<SplitInfo>) {
         let text = text_node.get_text();
 
@@ -428,8 +426,8 @@ impl<'a> TextNode<'a> {
         // priority: 2
         let mut break_point = text.len();
 
-        let font_ref = text_node.font.as_ref();
-        let scaled_font = font_ref.as_scaled(PxScale::from(text_node.font.size));
+        let font_ref = font.as_ref();
+        let scaled_font = font_ref.as_scaled(PxScale::from(font.size));
         for (i, c) in text.char_indices() {
             if start_position.is_none() {
                 start_position = Some(c.len_utf8());
@@ -450,7 +448,7 @@ impl<'a> TextNode<'a> {
         }
 
         break_point += text_node.range.start + start_position.unwrap();
-        
+
         let inline_start = SplitInfo::new(text_node.range.start..break_point);
         let mut inline_end = None;
 

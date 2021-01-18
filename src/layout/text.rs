@@ -1,3 +1,4 @@
+use unicode_script::Script;
 use super::font::{create_font_properties, Font, FontCacheKey, FontContext, FontProperties};
 use crate::dom::NodeType;
 use crate::font_list::fallback_font_families;
@@ -32,6 +33,7 @@ impl TextRun {
         let size = styled_node.font_size();
         let families = styled_node.font_family();
 
+        let mut script = Script::Common;
         let mut font: Option<Font> = None;
         let mut text_runs = vec![];
 
@@ -40,10 +42,12 @@ impl TextRun {
             if !ch.is_whitespace() {
                 let has_glyph = |font: &Font| font.glyph_index(ch).is_some();
 
-                let has_font = match &font {
-                    Some(font) => has_glyph(font),
-                    None => false,
-                };
+                let new_script = Script::from(ch);
+                let compatible_script = is_compatible(script, new_script);
+                if compatible_script && !is_specific(script) && is_specific(new_script) {
+                  // Initialize Script::Common to new_script, if new_script is specific
+                  script = new_script;
+                }
 
                 let new_font = families
                     .iter()
@@ -64,7 +68,14 @@ impl TextRun {
                         .find(has_glyph)
                 };
 
-                if !has_font {
+                let has_font = match &font {
+                  Some(font) => has_glyph(font),
+                  None => false,
+                };
+
+                let is_flush = !has_font || !compatible_script;
+
+                if is_flush {
                     if end_pos > 0 {
                         text_runs.push(TextRun::new(
                             transform_text(content, &mut start_pos, end_pos),
@@ -74,6 +85,7 @@ impl TextRun {
                         ));
                     }
                     font = new_font;
+                    script = new_script;
                 }
             }
             end_pos += ch.len_utf8();
@@ -88,6 +100,14 @@ impl TextRun {
 
         text_runs
     }
+}
+
+fn is_compatible(old: Script, new: Script) -> bool {
+  old == new || !is_specific(old) || !is_specific(new)
+}
+
+fn is_specific(script: Script) -> bool {
+  script != Script::Common && script != Script::Inherited
 }
 
 fn transform_text(content: &str, start_pos: &mut usize, end_pos: usize) -> String {

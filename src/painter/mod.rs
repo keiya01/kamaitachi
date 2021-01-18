@@ -126,10 +126,7 @@ fn render_text(list: &mut DisplayList, layout_box: &LayoutBox, font_context: &mu
     // layout_boxのdimensionsをrun_info.dimensionsで置き換える
     // fontはrun_info.fontに持っておく
 
-    let font = font_context.get_or_create_by(FontCacheKey::new(
-        node.styled_node,
-        node.styled_node.font_family(),
-    ));
+    let font = font_context.get_or_create_by(&node.text_run.cache_key);
     list.push(DisplayCommand::Text(
         text.into(),
         color,

@@ -6,3 +6,4 @@ pub mod painter;
 pub mod parser;
 pub mod style;
 pub mod window;
+pub mod font_list;

@@ -1,10 +1,12 @@
 pub mod font;
+pub mod text;
 mod inline;
 
 use crate::cssom::{Unit, Value};
 use crate::dom::NodeType;
 use crate::style::*;
-use font::{Font, GlyphBrushFont, PxScale, ScaleFont};
+use font::{Font, FontContext, with_thread_local_font_context, GlyphBrushFont, PxScale, ScaleFont};
+use text::{TextRun};
 use inline::InlineBox;
 use std::cell::RefCell;
 use std::mem;
@@ -47,6 +49,14 @@ impl Dimensions {
     pub fn margin_horizontal_box(&self) -> Rect {
         self.border_horizontal_box()
             .expanded_horizontal_by(&self.margin)
+    }
+
+    pub fn padding_top_offset(&self) -> f32 {
+        self.padding.top
+    }
+
+    pub fn border_top_offset(&self) -> f32 {
+        self.padding_top_offset() + self.border.top
     }
 
     pub fn padding_left_offset(&self) -> f32 {
@@ -390,22 +400,20 @@ pub enum BoxType<'a> {
 pub struct TextNode<'a> {
     pub styled_node: &'a StyledNode<'a>,
     pub range: Range<usize>,
+    pub text_run: TextRun,
 }
 
 impl<'a> TextNode<'a> {
-    fn new(styled_node: &'a StyledNode<'a>, content: &str) -> TextNode<'a> {
+    fn new(styled_node: &'a StyledNode<'a>, text_run: TextRun) -> TextNode<'a> {
         TextNode {
             styled_node,
-            range: 0..content.len(),
+            range: 0..text_run.text.len(),
+            text_run,
         }
     }
 
     pub fn get_text(&self) -> &str {
-        let text = match &self.styled_node.node.node_type {
-            NodeType::Text(text) => text,
-            _ => unreachable!(),
-        };
-        &text[self.range.clone()]
+        &self.text_run.text[self.range.clone()]
     }
 
     // TODO: stop splitting just before inline box
@@ -484,34 +492,54 @@ pub fn layout_tree<'a>(
     // The layout algorithm expects the container height to start at 0.
     // TODO: Save the initial containing block height, for calculating percent heights.
     containing_block.borrow_mut().content.height = 0.0;
-
-    let mut root_box = build_layout_tree(node);
+    
+    let mut root_box = with_thread_local_font_context(|font_context| build_layout_tree(node, None, font_context).unwrap());
     root_box.layout(containing_block);
     root_box
 }
 
-pub fn build_layout_tree<'a>(style_node: &'a StyledNode<'a>) -> LayoutBox<'a> {
-    let mut root = LayoutBox::new(match style_node.display() {
+pub fn build_layout_tree<'a>(style_node: &'a StyledNode<'a>, container: Option<&mut LayoutBox<'a>>, font_context: &mut FontContext) -> Option<LayoutBox<'a>> {
+    let box_type = match style_node.display() {
         Display::Block => BoxType::BlockNode(style_node),
         Display::Inline => match &style_node.node.node_type {
             NodeType::Element(_) => BoxType::InlineNode(style_node),
-            NodeType::Text(content) => BoxType::TextNode(TextNode::new(style_node, content)),
+            NodeType::Text(_) => {
+                let layout_box = match container {
+                    Some(layout_box) => layout_box,
+                    None => unreachable!(),
+                };
+                let text_runs = TextRun::scan_for_text(style_node, font_context);
+
+                for run in text_runs.into_iter() {
+                    let child = LayoutBox::new(BoxType::TextNode(TextNode::new(style_node, run)));
+                    layout_box.get_inline_container().children.push(child);
+                }
+
+                return None;
+            },
         },
         Display::None => panic!("Root node must has `display: none;`."),
-    });
+    };
+
+    let mut root = LayoutBox::new(box_type);
 
     for child in &style_node.children {
         match child.display() {
-            Display::Block => root.children.push(build_layout_tree(child)),
-            Display::Inline => root
-                .get_inline_container()
-                .children
-                .push(build_layout_tree(child)),
+            Display::Block => {
+                if let Some(layout_box) = build_layout_tree(child, Some(&mut root), font_context) {
+                    root.children.push(layout_box);
+                }
+            }
+            Display::Inline => {
+                if let Some(layout_box) = build_layout_tree(child, Some(&mut root), font_context) {
+                    root.get_inline_container().children.push(layout_box);
+                }
+            }
             Display::None => {}
         }
     }
 
-    root
+    Some(root)
 }
 
 #[cfg(test)]

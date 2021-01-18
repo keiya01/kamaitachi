@@ -1,24 +1,33 @@
 pub use font_kit::family_name::FamilyName;
 pub use font_kit::handle::Handle;
-pub use font_kit::properties::{Stretch as FontStretch, Style as FontStyle, Weight as FontWeight};
+pub use font_kit::properties::{Properties as FontProperties, Stretch as FontStretch, Style as FontStyle, Weight as FontWeight};
 pub use glyph_brush::ab_glyph::{Font as GlyphBrushFont, PxScale, ScaleFont};
 
 use core_text::font::CTFont;
 use font_kit::font;
-use font_kit::properties::Properties;
 use font_kit::source::SystemSource;
+use core_foundation::string::UniChar;
+use core_graphics::font::CGGlyph;
 use glyph_brush::ab_glyph::FontRef;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
-
 use crate::style::StyledNode;
 
-#[derive(Clone)]
+pub fn create_font_properties(styled_node: &StyledNode) -> FontProperties {
+    FontProperties {
+        style: styled_node.font_style(),
+        weight: styled_node.font_weight(),
+        // TODO: support font stretch
+        stretch: FontStretch::NORMAL,
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct FontCacheKey {
     size: f32,
-    properties: Properties,
-    family_name: FamilyName,
+    properties: FontProperties,
+    family_name: String,
 }
 
 impl Hash for FontCacheKey {
@@ -27,6 +36,7 @@ impl Hash for FontCacheKey {
         format!("{:?}", self.properties.style).hash(state);
         (self.properties.stretch.0 as i32).hash(state);
         (self.properties.weight.0 as i32).hash(state);
+        self.family_name.hash(state);
     }
 }
 
@@ -36,26 +46,32 @@ impl PartialEq for FontCacheKey {
             && (self.properties.stretch.0 as i32) == (other.properties.stretch.0 as i32)
             && (self.properties.weight.0 as i32) == (other.properties.weight.0 as i32)
             && format!("{:?}", self.properties.style) == format!("{:?}", other.properties.style)
+            && self.family_name == other.family_name
     }
 }
 
 impl Eq for FontCacheKey {}
 
 impl FontCacheKey {
-    pub fn new(styled_node: &StyledNode, family_name: FamilyName) -> FontCacheKey {
+    pub fn new(size: f32, properties: FontProperties, family_name: String) -> FontCacheKey {
+        FontCacheKey {
+            size,
+            properties,
+            family_name,
+        }
+    }
+
+    pub fn new_from_style(styled_node: &StyledNode) -> FontCacheKey {
         FontCacheKey {
             size: styled_node.font_size(),
-            properties: Properties {
-                style: styled_node.font_style(),
-                weight: styled_node.font_weight(),
-                stretch: FontStretch::NORMAL,
-            },
-            family_name,
+            properties: create_font_properties(styled_node),
+            // TODO: Fix to find appropriate family name
+            family_name: styled_node.font_family().pop().unwrap(),
         }
     }
 }
 
-pub(crate) struct FontContext {
+pub struct FontContext {
     font_caches: HashMap<FontCacheKey, Font>,
 }
 
@@ -66,13 +82,13 @@ impl FontContext {
         }
     }
 
-    pub fn get_or_create_by(&mut self, cache_key: FontCacheKey) -> Font {
+    pub fn get_or_create_by(&mut self, cache_key: &FontCacheKey) -> Font {
         let font = self.font_caches.get(&cache_key);
         if let Some(font) = font {
             return font.clone();
         }
-        let font = Font::new(cache_key.clone());
-        self.font_caches.insert(cache_key, font.clone());
+        let font = Font::new(cache_key);
+        self.font_caches.insert(cache_key.clone(), font.clone());
         font
     }
 }
@@ -98,6 +114,7 @@ pub struct Font {
     pub ascent: f32,
     pub descent: f32,
     pub size: f32,
+    pub family_name: String,
     ctfont: CTFont,
     units_per_em: f32,
 }
@@ -111,9 +128,9 @@ fn pt_to_px(pt: f64) -> f64 {
 }
 
 impl Font {
-    pub fn new(descriptor: FontCacheKey) -> Font {
+    pub fn new(descriptor: &FontCacheKey) -> Font {
         let size = descriptor.size;
-        let font_families = &[descriptor.family_name];
+        let font_families = &[FamilyName::Title(descriptor.family_name.clone())];
         let font = load_font_family(Some(font_families), &descriptor.properties);
 
         let ctfont = font.native_font().clone_with_font_size(size as f64);
@@ -130,12 +147,30 @@ impl Font {
             size,
             units_per_em: ctfont.units_per_em() as f32,
             ctfont,
+            family_name: descriptor.family_name.clone(),
         }
     }
 
     pub fn as_ref(&self) -> FontRef {
         // TODO: optimize memory leak
         FontRef::try_from_slice(self.get_static_font_data()).unwrap()
+    }
+
+    pub fn glyph_index(&self, codepoint: char) -> Option<u32> {
+        let characters: [UniChar; 1] = [codepoint as UniChar];
+        let mut glyphs: [CGGlyph; 1] = [0 as CGGlyph];
+
+        let result = unsafe {
+            self.ctfont
+                .get_glyphs_for_characters(characters.as_ptr(), glyphs.as_mut_ptr(), 1)
+        };
+
+        if !result || glyphs[0] == 0 {
+            // No glyph for this character
+            return None;
+        }
+
+        return Some(glyphs[0] as u32);
     }
 
     fn leading(&self, line_height: f32) -> f32 {
@@ -171,7 +206,7 @@ impl Font {
     }
 }
 
-fn load_font_family(font_families: Option<&[FamilyName]>, properties: &Properties) -> font::Font {
+fn load_font_family(font_families: Option<&[FamilyName]>, properties: &FontProperties) -> font::Font {
     match font_families {
         Some(font_families) => SystemSource::new()
             .select_best_match(font_families, properties)
@@ -184,7 +219,7 @@ fn load_font_family(font_families: Option<&[FamilyName]>, properties: &Propertie
 
 fn load_default_font_family() -> font::Font {
     SystemSource::new()
-        .select_best_match(&[FamilyName::Serif], &Properties::new())
+        .select_best_match(&[FamilyName::Serif], &FontProperties::new())
         .unwrap()
         .load()
         .unwrap()

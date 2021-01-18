@@ -4,11 +4,12 @@
 
 use std::collections::HashMap;
 
-use crate::{cssom, dom, layout, parser};
+use crate::{cssom, dom, layout, parser, font_list};
 use cssom::*;
 use dom::{ElementData, Node, NodeType};
-use layout::font::{FamilyName, FontStyle, FontWeight};
+use layout::font::{FontStyle, FontWeight};
 use parser::css::CSSParser;
+use font_list::{get_generic_fonts, DEFAULT_FONT_FAMILY_NAME};
 
 // Map from CSS property names to values.
 type PropertyMap = HashMap<String, Value>;
@@ -34,7 +35,7 @@ const MEDIUM: f32 = 1.3;
 const SMALL: f32 = 1.1;
 const X_SMALL: f32 = 1.;
 
-const INHERITABLE_PROPERTY_LIST: [&str; 3] = ["font-size", "color", "line-height"];
+const INHERITABLE_PROPERTY_LIST: [&str; 6] = ["font-size", "color", "line-height", "font-family", "font-weight", "font-style"];
 
 impl<'a> StyledNode<'a> {
     pub fn new(
@@ -69,9 +70,38 @@ impl<'a> StyledNode<'a> {
             .unwrap_or_else(|| self.value(fallback_name).unwrap_or_else(|| default.clone()))
     }
 
-    /// currently, this method return only default font
-    pub fn font_family(&self) -> FamilyName {
-        FamilyName::Serif
+    /// Currently, this method return only default font.
+    /// Font families are supported only for macos.
+    pub fn font_family(&self) -> Vec<String> {
+        let generic_fonts = get_generic_fonts();
+        let default_families = vec![DEFAULT_FONT_FAMILY_NAME.to_string(); 1];
+        let value = match self.value("font-family") {
+            Some(val) => val,
+            None => return default_families
+        };
+
+        match value {
+            Value::Keyword(val) => {
+                match generic_fonts.get(&val) {
+                    Some(val) => vec![val.clone(); 1],
+                    None => default_families,
+                }
+            },
+            Value::KeywordArray(arr) => {
+                let mut families = vec![];
+                for item in arr.into_iter() {
+                    match generic_fonts.get(&item) {
+                        Some(val) => families.push(val.clone()),
+                        None => continue,
+                    }
+                }
+                if families.len() == 0 {
+                    return default_families;
+                }
+                families
+            },
+            _ => default_families,
+        }
     }
 
     pub fn font_size(&self) -> f32 {

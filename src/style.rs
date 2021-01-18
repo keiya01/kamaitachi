@@ -77,7 +77,6 @@ impl<'a> StyledNode<'a> {
             .unwrap_or_else(|| self.value(fallback_name).unwrap_or_else(|| default.clone()))
     }
 
-    /// Currently, this method return only default font.
     /// Font families are supported only for macos.
     pub fn font_family(&self) -> Vec<String> {
         let generic_fonts = get_generic_fonts();

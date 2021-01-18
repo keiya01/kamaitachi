@@ -413,6 +413,7 @@ impl<'a> TextNode<'a> {
     }
 
     pub fn get_text(&self) -> &str {
+        println!("{}: {:?}", self.text_run.text, self.range);
         &self.text_run.text[self.range.clone()]
     }
 
@@ -432,7 +433,7 @@ impl<'a> TextNode<'a> {
         // priority: 1
         let mut space_position: Option<usize> = None;
         // priority: 2
-        let mut break_point = text.len();
+        let mut break_point: Option<usize> = None;
 
         let font_ref = font.as_ref();
         let scaled_font = font_ref.as_scaled(PxScale::from(font.size));
@@ -447,15 +448,20 @@ impl<'a> TextNode<'a> {
             }
             if c.is_whitespace() {
                 space_position = Some(i);
+                continue;
             }
-            break_point = i;
+            // TODO: support word-break: break-all;
+            // break_point = Some(i);
         }
 
         if let Some(pos) = space_position {
-            break_point = pos;
+            break_point = Some(pos);
         }
 
-        break_point += text_node.range.start + start_position.unwrap();
+        let break_point = match break_point {
+            Some(pos) => pos + text_node.range.start + start_position.unwrap(),
+            None => return (None, Some(SplitInfo::new(text_node.range.start..text_node.range.end)))
+        };
 
         let inline_start = SplitInfo::new(text_node.range.start..break_point);
         let mut inline_end = None;

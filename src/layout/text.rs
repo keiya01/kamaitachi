@@ -2,7 +2,6 @@ use super::font::{create_font_properties, Font, FontCacheKey, FontContext, FontP
 use crate::dom::NodeType;
 use crate::font_list::fallback_font_families;
 use crate::style::StyledNode;
-use std::ops::Range;
 
 #[derive(Debug, Clone)]
 pub struct TextRun {

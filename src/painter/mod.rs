@@ -7,7 +7,7 @@ pub use text::create_text;
 
 use crate::cssom::{Color, Value};
 use crate::layout::{font, BoxType, LayoutBox, Rect};
-use font::{with_thread_local_font_context, FontCacheKey, FontContext};
+use font::{with_thread_local_font_context, FontContext};
 
 pub type DisplayList = Vec<DisplayCommand>;
 

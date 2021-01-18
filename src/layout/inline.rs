@@ -383,7 +383,7 @@ impl<'a> InlineBox<'a> {
                 {
                     let mut d = item.dimensions.borrow_mut();
                     d.content.x += line_box_x + d.margin_left_offset();
-                    d.content.y += new_rect_y + d.border.top;
+                    d.content.y += new_rect_y;
                 }
                 if let BoxType::InlineNode(_) = item.box_type {
                     let line_box_x = { line_box_x + item.dimensions.borrow().margin_left_offset() };
@@ -407,7 +407,6 @@ impl<'a> InlineBox<'a> {
         additional_rect_y: f32,
     ) {
         let mut new_rect_x = additional_rect_x;
-        let border_top = { layout_box.dimensions.borrow().border.top };
         for child in &mut layout_box.children {
             if let BoxType::InlineNode(_) = child.box_type {
                 let new_rect_x = {
@@ -422,7 +421,7 @@ impl<'a> InlineBox<'a> {
             new_rect_x += d.margin_horizontal_box().width;
 
             d.content.x += additional_rect_x + d.margin_left_offset();
-            d.content.y += additional_rect_y + border_top;
+            d.content.y += additional_rect_y;
         }
     }
 }

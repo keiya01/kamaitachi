@@ -4,12 +4,12 @@
 
 use std::collections::HashMap;
 
-use crate::{cssom, dom, layout, parser, font_list};
+use crate::{cssom, dom, font_list, layout, parser};
 use cssom::*;
 use dom::{ElementData, Node, NodeType};
+use font_list::{get_generic_fonts, DEFAULT_FONT_FAMILY_NAME};
 use layout::font::{FontStyle, FontWeight};
 use parser::css::CSSParser;
-use font_list::{get_generic_fonts, DEFAULT_FONT_FAMILY_NAME};
 
 // Map from CSS property names to values.
 type PropertyMap = HashMap<String, Value>;
@@ -35,7 +35,14 @@ const MEDIUM: f32 = 1.3;
 const SMALL: f32 = 1.1;
 const X_SMALL: f32 = 1.;
 
-const INHERITABLE_PROPERTY_LIST: [&str; 6] = ["font-size", "color", "line-height", "font-family", "font-weight", "font-style"];
+const INHERITABLE_PROPERTY_LIST: [&str; 6] = [
+    "font-size",
+    "color",
+    "line-height",
+    "font-family",
+    "font-weight",
+    "font-style",
+];
 
 impl<'a> StyledNode<'a> {
     pub fn new(
@@ -77,15 +84,13 @@ impl<'a> StyledNode<'a> {
         let default_families = vec![DEFAULT_FONT_FAMILY_NAME.to_string(); 1];
         let value = match self.value("font-family") {
             Some(val) => val,
-            None => return default_families
+            None => return default_families,
         };
 
         match value {
-            Value::Keyword(val) => {
-                match generic_fonts.get(&val) {
-                    Some(val) => vec![val.clone(); 1],
-                    None => default_families,
-                }
+            Value::Keyword(val) => match generic_fonts.get(&val) {
+                Some(val) => vec![val.clone(); 1],
+                None => default_families,
             },
             Value::KeywordArray(arr) => {
                 let mut families = vec![];
@@ -99,7 +104,7 @@ impl<'a> StyledNode<'a> {
                     return default_families;
                 }
                 families
-            },
+            }
             _ => default_families,
         }
     }

@@ -463,7 +463,14 @@ h1 {}
             let declaration = &rule.declarations[0];
             assert_eq!(&declaration.name, "font-family");
             if let Value::KeywordArray(arr) = &declaration.value {
-                assert_eq!(arr, &["serif".to_string(), "sans-serif".to_string(), "cursive".to_string()]);
+                assert_eq!(
+                    arr,
+                    &[
+                        "serif".to_string(),
+                        "sans-serif".to_string(),
+                        "cursive".to_string()
+                    ]
+                );
             } else {
                 panic!("declaration.value should has KeywordArray");
             };

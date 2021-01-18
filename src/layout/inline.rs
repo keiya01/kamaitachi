@@ -178,8 +178,9 @@ impl<'a> LineBreaker<'a> {
             self.layout(root, child, font_context);
 
             if let BoxType::TextNode(node) = &child.box_type {
-                let ascent = font_context.get_or_create_by(&node.text_run.cache_key)
-                .ascent;
+                let ascent = font_context
+                    .get_or_create_by(&node.text_run.cache_key)
+                    .ascent;
                 let mut d = containing_block.borrow_mut();
                 if ascent > d.content.height {
                     d.content.height = ascent;
@@ -217,7 +218,9 @@ impl<'a> LineBreaker<'a> {
             let mut containing_block = containing_block.borrow_mut();
             containing_block.content.width = total_width;
             let styled_node = layout_box.get_style_node();
-            let ascent = font_context.get_or_create_by(&FontCacheKey::new_from_style(styled_node)).ascent;
+            let ascent = font_context
+                .get_or_create_by(&FontCacheKey::new_from_style(styled_node))
+                .ascent;
             if ascent > containing_block.content.height {
                 containing_block.content.height = ascent;
             }
@@ -239,8 +242,14 @@ impl<'a> LineBreaker<'a> {
             .pending_line
             .metrics
             .calc_space(node.styled_node.line_height(), &font);
-        self.metrics.space_above_baseline = self.metrics.space_above_baseline.max(metrics.space_above_baseline);
-        self.metrics.space_under_baseline = self.metrics.space_under_baseline.max(metrics.space_under_baseline);
+        self.metrics.space_above_baseline = self
+            .metrics
+            .space_above_baseline
+            .max(metrics.space_above_baseline);
+        self.metrics.space_under_baseline = self
+            .metrics
+            .space_under_baseline
+            .max(metrics.space_under_baseline);
         self.metrics.leading = self.metrics.leading.max(metrics.leading);
 
         let text_width = self.text_width(node, &font);
@@ -386,8 +395,8 @@ impl<'a> InlineBox<'a> {
                 line_box_x += line_box_width;
                 line_breaker.max_width = line_box_width.max(line_breaker.max_width);
             }
-            line_breaker.cur_height +=
-                line_breaker.metrics.space_above_baseline + line_breaker.metrics.space_under_baseline;
+            line_breaker.cur_height += line_breaker.metrics.space_above_baseline
+                + line_breaker.metrics.space_under_baseline;
         }
     }
 
@@ -398,9 +407,7 @@ impl<'a> InlineBox<'a> {
         additional_rect_y: f32,
     ) {
         let mut new_rect_x = additional_rect_x;
-        let border_top = {
-            layout_box.dimensions.borrow().border.top
-        };
+        let border_top = { layout_box.dimensions.borrow().border.top };
         for child in &mut layout_box.children {
             if let BoxType::InlineNode(_) = child.box_type {
                 let new_rect_x = {

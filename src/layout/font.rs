@@ -1,18 +1,20 @@
 pub use font_kit::family_name::FamilyName;
 pub use font_kit::handle::Handle;
-pub use font_kit::properties::{Properties as FontProperties, Stretch as FontStretch, Style as FontStyle, Weight as FontWeight};
+pub use font_kit::properties::{
+    Properties as FontProperties, Stretch as FontStretch, Style as FontStyle, Weight as FontWeight,
+};
 pub use glyph_brush::ab_glyph::{Font as GlyphBrushFont, PxScale, ScaleFont};
 
+use crate::style::StyledNode;
+use core_foundation::string::UniChar;
+use core_graphics::font::CGGlyph;
 use core_text::font::CTFont;
 use font_kit::font;
 use font_kit::source::SystemSource;
-use core_foundation::string::UniChar;
-use core_graphics::font::CGGlyph;
 use glyph_brush::ab_glyph::FontRef;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
-use crate::style::StyledNode;
 
 pub fn create_font_properties(styled_node: &StyledNode) -> FontProperties {
     FontProperties {
@@ -206,7 +208,10 @@ impl Font {
     }
 }
 
-fn load_font_family(font_families: Option<&[FamilyName]>, properties: &FontProperties) -> font::Font {
+fn load_font_family(
+    font_families: Option<&[FamilyName]>,
+    properties: &FontProperties,
+) -> font::Font {
     match font_families {
         Some(font_families) => SystemSource::new()
             .select_best_match(font_families, properties)

@@ -1,17 +1,17 @@
 pub mod font;
-pub mod text;
 mod inline;
+pub mod text;
 
 use crate::cssom::{Unit, Value};
 use crate::dom::NodeType;
 use crate::style::*;
-use font::{Font, FontContext, with_thread_local_font_context, GlyphBrushFont, PxScale, ScaleFont};
-use text::{TextRun};
+use font::{with_thread_local_font_context, Font, FontContext, GlyphBrushFont, PxScale, ScaleFont};
 use inline::InlineBox;
 use std::cell::RefCell;
 use std::mem;
 use std::ops::Range;
 use std::rc::Rc;
+use text::TextRun;
 
 // CSS box model. All sizes are in px.
 
@@ -492,13 +492,19 @@ pub fn layout_tree<'a>(
     // The layout algorithm expects the container height to start at 0.
     // TODO: Save the initial containing block height, for calculating percent heights.
     containing_block.borrow_mut().content.height = 0.0;
-    
-    let mut root_box = with_thread_local_font_context(|font_context| build_layout_tree(node, None, font_context).unwrap());
+
+    let mut root_box = with_thread_local_font_context(|font_context| {
+        build_layout_tree(node, None, font_context).unwrap()
+    });
     root_box.layout(containing_block);
     root_box
 }
 
-pub fn build_layout_tree<'a>(style_node: &'a StyledNode<'a>, container: Option<&mut LayoutBox<'a>>, font_context: &mut FontContext) -> Option<LayoutBox<'a>> {
+pub fn build_layout_tree<'a>(
+    style_node: &'a StyledNode<'a>,
+    container: Option<&mut LayoutBox<'a>>,
+    font_context: &mut FontContext,
+) -> Option<LayoutBox<'a>> {
     let box_type = match style_node.display() {
         Display::Block => BoxType::BlockNode(style_node),
         Display::Inline => match &style_node.node.node_type {
@@ -516,7 +522,7 @@ pub fn build_layout_tree<'a>(style_node: &'a StyledNode<'a>, container: Option<&
                 }
 
                 return None;
-            },
+            }
         },
         Display::None => panic!("Root node must has `display: none;`."),
     };

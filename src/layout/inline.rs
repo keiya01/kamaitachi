@@ -252,7 +252,7 @@ impl<'a> LineBreaker<'a> {
             .max(metrics.space_under_baseline);
         self.metrics.leading = self.metrics.leading.max(metrics.leading);
 
-        let text_width = self.text_width(node, &font);
+        let text_width = self.text_width(node, &font, font_context);
 
         let remaining_width =
             self.pending_line.green_zone.width - self.pending_line.bounds.content.width;
@@ -261,7 +261,7 @@ impl<'a> LineBreaker<'a> {
             self.pending_line.is_line_broken = true;
 
             let (inline_start, inline_end) =
-                node.calculate_split_position(node, remaining_width, &font);
+                node.calculate_split_position(node, remaining_width, &font, font_context);
 
             if let Some(inline_start) = &inline_start {
                 let mut node = match &mut layout_box.box_type {
@@ -276,7 +276,7 @@ impl<'a> LineBreaker<'a> {
                     node.range.end -= 1;
                 }
 
-                let text_width = self.text_width(node, &font);
+                let text_width = self.text_width(node, &font, font_context);
                 {
                     let mut d = layout_box.dimensions.borrow_mut();
                     d.content.height = font.ascent + font.descent;
@@ -329,10 +329,10 @@ impl<'a> LineBreaker<'a> {
         root.clone()
     }
 
-    fn text_width(&self, node: &TextNode<'a>, font: &Font) -> f32 {
+    fn text_width(&self, node: &TextNode<'a>, font: &Font, font_context: &mut FontContext) -> f32 {
         let text = node.get_text();
         // TODO: optimize to load font only once
-        font.width(text)
+        font.width(text, font_context)
     }
 
     fn pending_line_is_empty(&self) -> bool {

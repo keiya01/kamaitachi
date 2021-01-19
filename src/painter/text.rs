@@ -12,6 +12,7 @@ pub fn create_text(
     color: Color,
     rect: Rect,
     font: layout_font::Font,
+    font_context: &mut layout_font::FontContext,
 ) -> Primitive {
     Primitive::Text {
         content,
@@ -22,7 +23,7 @@ pub fn create_text(
         color: GraphicsColor::from_rgba8(color.r, color.g, color.b, color.a),
         size: font.size,
         font: Font::External {
-            bytes: font.get_static_font_data(),
+            bytes: font.get_static_font_data(font_context),
             name: font.get_static_font_family(),
         },
         horizontal_alignment: HorizontalAlignment::Left,

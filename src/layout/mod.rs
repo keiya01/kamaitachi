@@ -413,7 +413,6 @@ impl<'a> TextNode<'a> {
     }
 
     pub fn get_text(&self) -> &str {
-        println!("{}: {:?}", self.text_run.text, self.range);
         &self.text_run.text[self.range.clone()]
     }
 
@@ -424,6 +423,7 @@ impl<'a> TextNode<'a> {
         text_node: &TextNode,
         remaining_width: f32,
         font: &Font,
+        font_context: &mut FontContext,
     ) -> (Option<SplitInfo>, Option<SplitInfo>) {
         let text = text_node.get_text();
 
@@ -435,7 +435,7 @@ impl<'a> TextNode<'a> {
         // priority: 2
         let mut break_point: Option<usize> = None;
 
-        let font_ref = font.as_ref();
+        let font_ref = font.as_ref(font_context);
         let scaled_font = font_ref.as_scaled(PxScale::from(font.size));
         for (i, c) in text.char_indices() {
             if start_position.is_none() {

@@ -75,12 +75,14 @@ impl FontCacheKey {
 
 pub struct FontContext {
     font_caches: HashMap<FontCacheKey, Font>,
+    font_data_caches: HashMap<FontCacheKey, &'static [u8]>,
 }
 
 impl FontContext {
     pub fn new() -> FontContext {
         FontContext {
             font_caches: HashMap::new(),
+            font_data_caches: HashMap::new(),
         }
     }
 
@@ -119,6 +121,7 @@ pub struct Font {
     pub family_name: String,
     ctfont: CTFont,
     units_per_em: f32,
+    cache_key: FontCacheKey,
 }
 
 fn px_to_pt(px: f64) -> f64 {
@@ -150,12 +153,12 @@ impl Font {
             units_per_em: ctfont.units_per_em() as f32,
             ctfont,
             family_name: descriptor.family_name.clone(),
+            cache_key: descriptor.clone(),
         }
     }
 
-    pub fn as_ref(&self) -> FontRef {
-        // TODO: optimize memory leak
-        FontRef::try_from_slice(self.get_static_font_data()).unwrap()
+    pub fn as_ref(&self, font_context: &mut FontContext) -> FontRef {
+        FontRef::try_from_slice(self.get_static_font_data(font_context)).unwrap()
     }
 
     pub fn glyph_index(&self, codepoint: char) -> Option<u32> {
@@ -186,8 +189,8 @@ impl Font {
         (above_baseline, under_baseline)
     }
 
-    pub fn width(&self, text: &str) -> f32 {
-        let font_ref = self.as_ref();
+    pub fn width(&self, text: &str, font_context: &mut FontContext) -> f32 {
+        let font_ref = self.as_ref(font_context);
         let scaled_font = font_ref.as_scaled(PxScale::from(self.size));
         let mut total_width = 0.;
         for c in text.chars() {
@@ -197,10 +200,15 @@ impl Font {
         total_width
     }
 
-    pub fn get_static_font_data(&self) -> &'static [u8] {
+    pub fn get_static_font_data(&self, font_context: &mut FontContext) -> &'static [u8] {
+        if let Some(data) = font_context.font_data_caches.get(&self.cache_key) {
+            return data;
+        }
         let font_data = &*self.font.copy_font_data().unwrap();
         let boxed_slice = font_data.clone().into_boxed_slice();
-        Box::leak(boxed_slice)
+        let leaked_slice = Box::leak(boxed_slice);
+        font_context.font_data_caches.insert(self.cache_key.clone(), leaked_slice);
+        leaked_slice
     }
 
     pub fn get_static_font_family(&self) -> &'static str {

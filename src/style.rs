@@ -99,7 +99,7 @@ impl<'a> StyledNode<'a> {
                         None => continue,
                     }
                 }
-                if families.len() == 0 {
+                if families.is_empty() {
                     return default_families;
                 }
                 families

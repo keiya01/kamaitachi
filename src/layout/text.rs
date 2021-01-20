@@ -16,7 +16,7 @@ pub struct TextRun {
 impl TextRun {
     pub fn new(text: String, size: f32, descriptor: FontProperties, font: Font) -> TextRun {
         TextRun {
-            cache_key: FontCacheKey::new(size, descriptor.clone(), font.family_name.clone()),
+            cache_key: FontCacheKey::new(size, descriptor, font.family_name.clone()),
             text,
             size,
             descriptor,

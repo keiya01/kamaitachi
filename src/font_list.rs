@@ -100,4 +100,4 @@ pub fn get_generic_fonts() -> HashMap<String, String> {
     generic_fonts
 }
 
-pub static DEFAULT_FONT_FAMILY_NAME: &'static str = "Times New Roman";
+pub static DEFAULT_FONT_FAMILY_NAME: &str = "Times New Roman";

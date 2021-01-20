@@ -370,7 +370,7 @@ impl<'a> LayoutBox<'a> {
         d.margin.left = 0.;
         d.border.left = 0.;
         d.padding.left = 0.;
-        if self.children.len() != 0 {
+        if !self.children.is_empty() {
             self.children[0].reset_edge_left();
         }
     }

@@ -108,7 +108,7 @@ where
     FONT_CONTEXT.with(|font_context| {
         f(font_context
             .borrow_mut()
-            .get_or_insert_with(|| FontContext::new()))
+            .get_or_insert_with(FontContext::new))
     })
 }
 
@@ -175,7 +175,7 @@ impl Font {
             return None;
         }
 
-        return Some(glyphs[0] as u32);
+        Some(glyphs[0] as u32)
     }
 
     fn leading(&self, line_height: f32) -> f32 {

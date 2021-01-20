@@ -118,7 +118,7 @@ impl<'a> LineBreaker<'a> {
             self.pending_line.bounds.content.x = line_bounds.content.x;
             self.pending_line.bounds.content.y = line_bounds.content.y;
             self.pending_line.green_zone.width = line_bounds.content.width;
-            if self.lines.len() != 0 {
+            if !self.lines.is_empty() {
                 let last_line_index = self.lines.len() - 1;
                 let end_last_line_range = self.lines[last_line_index].range.end;
                 self.pending_line.range = end_last_line_range..end_last_line_range;
@@ -206,7 +206,7 @@ impl<'a> LineBreaker<'a> {
         }
 
         // inline_end
-        if self.pending_line.is_line_broken && broken_line_children.len() != 0 {
+        if self.pending_line.is_line_broken && !broken_line_children.is_empty() {
             end_layout_box.children = broken_line_children;
             end_layout_box.reset_edge_left();
             self.work_list.push_front(end_layout_box);

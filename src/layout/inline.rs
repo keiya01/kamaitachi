@@ -261,7 +261,7 @@ impl<'a> LineBreaker<'a> {
             self.pending_line.is_line_broken = true;
 
             let (inline_start, inline_end) =
-                node.calculate_split_position(node, remaining_width, &font, font_context);
+                node.calculate_split_position(node, self.pending_line.green_zone.width, remaining_width, &font, font_context);
 
             if let Some(inline_start) = &inline_start {
                 let mut node = match &mut layout_box.box_type {

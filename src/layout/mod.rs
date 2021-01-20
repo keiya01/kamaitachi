@@ -417,10 +417,10 @@ impl<'a> TextNode<'a> {
     }
 
     // TODO: stop splitting just before inline box
-    // TODO: consider if inline_start is NONE
     fn calculate_split_position(
         &self,
         text_node: &TextNode,
+        max_width: f32,
         remaining_width: f32,
         font: &Font,
         font_context: &mut FontContext,
@@ -443,15 +443,14 @@ impl<'a> TextNode<'a> {
             }
             let advanced_width = scaled_font.h_advance(scaled_font.glyph_id(c));
             total_width += advanced_width;
-            if total_width > remaining_width {
-                break;
+            if total_width <= remaining_width {
+                if c.is_whitespace() {
+                    space_position = Some(i);
+                    continue;
+                }
+                // TODO: support word-break: break-all;
+                // break_point = Some(i);
             }
-            if c.is_whitespace() {
-                space_position = Some(i);
-                continue;
-            }
-            // TODO: support word-break: break-all;
-            // break_point = Some(i);
         }
 
         if let Some(pos) = space_position {
@@ -460,6 +459,12 @@ impl<'a> TextNode<'a> {
 
         let break_point = match break_point {
             Some(pos) => pos + text_node.range.start + start_position.unwrap(),
+            None if total_width > max_width => {
+                return (
+                    Some(SplitInfo::new(text_node.range.start..text_node.range.end)),
+                    None,
+                )
+            },
             None => {
                 return (
                     None,

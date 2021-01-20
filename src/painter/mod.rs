@@ -110,7 +110,6 @@ fn render_borders(list: &mut DisplayList, layout_box: &LayoutBox) {
     }
 }
 
-// TODO: remove font_context
 fn render_text(list: &mut DisplayList, layout_box: &LayoutBox, font_context: &mut FontContext) {
     let node = match &layout_box.box_type {
         BoxType::TextNode(node) => node,
@@ -120,11 +119,6 @@ fn render_text(list: &mut DisplayList, layout_box: &LayoutBox, font_context: &mu
     let text = node.get_text();
 
     let color = get_color(layout_box, "color").unwrap_or_else(|| Color::new(0, 0, 0, 1.0));
-
-    // TODO: node.run_info_listのitemをloopしながら入れていく
-    // 座標やsizeはinline boxのlayout処理で行っておく
-    // layout_boxのdimensionsをrun_info.dimensionsで置き換える
-    // fontはrun_info.fontに持っておく
 
     let font = font_context.get_or_create_by(&node.text_run.cache_key);
     list.push(DisplayCommand::Text(

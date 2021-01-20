@@ -24,5 +24,7 @@
   - [x] `word-break: normal;`
   - [ ] `word-break: break-all;` ... for japanese
   - [x] `overflow-wrap: normal;`
+- [x] cache font
+- [x] internationalization(only japanese)
 - [ ] white space
 - [ ] vertical align, text-align

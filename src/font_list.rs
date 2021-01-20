@@ -39,17 +39,20 @@ pub fn fallback_font_families(codepoint: Option<char>) -> Vec<String> {
                         // UnicodeBlock::SupplementalMathematicalOperators |
                         // UnicodeBlock::MiscellaneousSymbolsandArrows |
                         // UnicodeBlock::SupplementalPunctuation => {
-                        //     families.push("Hiragino Kaku Gothic ProN");
-                        //     families.push("Apple Symbols");
-                        //     families.push("Menlo");
-                        //     families.push("STIXGeneral");
+                        //     families.push("Hiragino Kaku Gothic ProN".into());
+                        //     families.push("Apple Symbols".into());
+                        //     families.push("Menlo".into());
+                        //     families.push("STIXGeneral".into());
                         // },
+
                         UnicodeBlock::Kanbun
                         | UnicodeBlock::Hiragana
                         | UnicodeBlock::Katakana
                         | UnicodeBlock::CJKStrokes
+                        | UnicodeBlock::CJKUnifiedIdeographs
+                        | UnicodeBlock::CJKSymbolsandPunctuation
                         | UnicodeBlock::KatakanaPhoneticExtensions => {
-                            families.push("Hiragino Sans GB".into());
+                            families.push("ヒラギノ角ゴ ProN".into());
                         }
 
                         // UnicodeBlock::YijingHexagramSymbols |
@@ -66,10 +69,10 @@ pub fn fallback_font_families(codepoint: Option<char>) -> Vec<String> {
             }
 
             // https://en.wikipedia.org/wiki/Plane_(Unicode)#Supplementary_Multilingual_Plane
-            // 1 => {
-            //     families.push("Apple Symbols");
-            //     families.push("STIXGeneral");
-            // },
+            1 => {
+                families.push("Apple Symbols".into());
+                families.push("STIXGeneral".into());
+            },
 
             // https://en.wikipedia.org/wiki/Plane_(Unicode)#Supplementary_Ideographic_Plane
             // 2 => {
@@ -81,21 +84,23 @@ pub fn fallback_font_families(codepoint: Option<char>) -> Vec<String> {
         };
     }
 
-    families.push("Geneva".into());
+    // families.push("Geneva".into());
     families
 }
 
-pub fn get_generic_fonts() -> HashMap<String, String> {
-    fn append(generic_fonts: &mut HashMap<String, String>, key: &str, val: &str) {
-        generic_fonts.insert(key.to_string(), val.to_string());
+type GenericFont = Vec<String>;
+
+pub fn get_generic_fonts() -> HashMap<String, GenericFont> {
+    fn append(generic_fonts: &mut HashMap<String, Vec<String>>, key: &str, val: GenericFont) {
+        generic_fonts.insert(key.to_string(), val);
     }
 
     let mut generic_fonts = HashMap::with_capacity(5);
-    append(&mut generic_fonts, "serif", "Times New Roman");
-    append(&mut generic_fonts, "sans-serif", "Helvetica");
-    append(&mut generic_fonts, "cursive", "Apple Chancery");
-    append(&mut generic_fonts, "fantasy", "Papyrus");
-    append(&mut generic_fonts, "monospace", "Menlo");
+    append(&mut generic_fonts, "serif", vec!["Times New Roman".into(), "ヒラギノ明朝 ProN".into()]);
+    append(&mut generic_fonts, "sans-serif", vec!["Helvetica".into()]);
+    append(&mut generic_fonts, "cursive", vec!["Apple Chancery".into()]);
+    append(&mut generic_fonts, "fantasy", vec!["Papyrus".into()]);
+    append(&mut generic_fonts, "monospace", vec!["Menlo".into(), "Osaka".into()]);
 
     generic_fonts
 }

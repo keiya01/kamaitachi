@@ -88,14 +88,18 @@ impl<'a> StyledNode<'a> {
 
         match value {
             Value::Keyword(val) => match generic_fonts.get(&val) {
-                Some(val) => vec![val.clone(); 1],
+                Some(val) => val.clone(),
                 None => default_families,
             },
             Value::KeywordArray(arr) => {
                 let mut families = vec![];
                 for item in arr.into_iter() {
                     match generic_fonts.get(&item) {
-                        Some(val) => families.push(val.clone()),
+                        Some(val) => {
+                            for name in val {
+                                families.push(name.clone());
+                            }
+                        }
                         None => continue,
                     }
                 }

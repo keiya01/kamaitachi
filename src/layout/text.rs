@@ -103,7 +103,7 @@ impl TextRun {
 }
 
 fn is_compatible(old: Script, new: Script) -> bool {
-    old == new || !is_specific(old) || !is_specific(new)
+    old == new
 }
 
 fn is_specific(script: Script) -> bool {

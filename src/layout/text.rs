@@ -1,8 +1,8 @@
-use unicode_script::Script;
 use super::font::{create_font_properties, Font, FontCacheKey, FontContext, FontProperties};
 use crate::dom::NodeType;
 use crate::font_list::fallback_font_families;
 use crate::style::StyledNode;
+use unicode_script::Script;
 
 #[derive(Debug, Clone)]
 pub struct TextRun {
@@ -45,8 +45,8 @@ impl TextRun {
                 let new_script = Script::from(ch);
                 let compatible_script = is_compatible(script, new_script);
                 if compatible_script && !is_specific(script) && is_specific(new_script) {
-                  // Initialize Script::Common to new_script, if new_script is specific
-                  script = new_script;
+                    // Initialize Script::Common to new_script, if new_script is specific
+                    script = new_script;
                 }
 
                 let new_font = families
@@ -69,8 +69,8 @@ impl TextRun {
                 };
 
                 let has_font = match &font {
-                  Some(font) => has_glyph(font),
-                  None => false,
+                    Some(font) => has_glyph(font),
+                    None => false,
                 };
 
                 let is_flush = !has_font || !compatible_script;
@@ -103,11 +103,11 @@ impl TextRun {
 }
 
 fn is_compatible(old: Script, new: Script) -> bool {
-  old == new || !is_specific(old) || !is_specific(new)
+    old == new || !is_specific(old) || !is_specific(new)
 }
 
 fn is_specific(script: Script) -> bool {
-  script != Script::Common && script != Script::Inherited
+    script != Script::Common && script != Script::Inherited
 }
 
 fn transform_text(content: &str, start_pos: &mut usize, end_pos: usize) -> String {

@@ -460,7 +460,12 @@ impl<'a> TextNode<'a> {
 
         let break_point = match break_point {
             Some(pos) => pos + text_node.range.start + start_position.unwrap(),
-            None => return (None, Some(SplitInfo::new(text_node.range.start..text_node.range.end)))
+            None => {
+                return (
+                    None,
+                    Some(SplitInfo::new(text_node.range.start..text_node.range.end)),
+                )
+            }
         };
 
         let inline_start = SplitInfo::new(text_node.range.start..break_point);

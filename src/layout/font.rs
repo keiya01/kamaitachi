@@ -207,7 +207,9 @@ impl Font {
         let font_data = &*self.font.copy_font_data().unwrap();
         let boxed_slice = font_data.clone().into_boxed_slice();
         let leaked_slice = Box::leak(boxed_slice);
-        font_context.font_data_caches.insert(self.cache_key.clone(), leaked_slice);
+        font_context
+            .font_data_caches
+            .insert(self.cache_key.clone(), leaked_slice);
         leaked_slice
     }
 

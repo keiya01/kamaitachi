@@ -1,15 +1,17 @@
 pub mod font;
 mod inline;
+pub mod text;
 
 use crate::cssom::{Unit, Value};
 use crate::dom::NodeType;
 use crate::style::*;
-use font::{GlyphBrushFont, PxScale, ScaleFont};
+use font::{with_thread_local_font_context, Font, FontContext, GlyphBrushFont, PxScale, ScaleFont};
 use inline::InlineBox;
 use std::cell::RefCell;
 use std::mem;
 use std::ops::Range;
 use std::rc::Rc;
+use text::TextRun;
 
 // CSS box model. All sizes are in px.
 
@@ -47,6 +49,14 @@ impl Dimensions {
     pub fn margin_horizontal_box(&self) -> Rect {
         self.border_horizontal_box()
             .expanded_horizontal_by(&self.margin)
+    }
+
+    pub fn padding_top_offset(&self) -> f32 {
+        self.padding.top
+    }
+
+    pub fn border_top_offset(&self) -> f32 {
+        self.padding_top_offset() + self.border.top
     }
 
     pub fn padding_left_offset(&self) -> f32 {
@@ -360,7 +370,7 @@ impl<'a> LayoutBox<'a> {
         d.margin.left = 0.;
         d.border.left = 0.;
         d.padding.left = 0.;
-        if self.children.len() != 0 {
+        if !self.children.is_empty() {
             self.children[0].reset_edge_left();
         }
     }
@@ -389,62 +399,79 @@ pub enum BoxType<'a> {
 #[derive(Debug, Clone)]
 pub struct TextNode<'a> {
     pub styled_node: &'a StyledNode<'a>,
-    pub font: font::Font,
     pub range: Range<usize>,
+    pub text_run: TextRun,
 }
 
 impl<'a> TextNode<'a> {
-    fn new(styled_node: &'a StyledNode<'a>, content: &str) -> TextNode<'a> {
-        let font = font::Font::new(None, styled_node.font_size());
+    fn new(styled_node: &'a StyledNode<'a>, text_run: TextRun) -> TextNode<'a> {
         TextNode {
             styled_node,
-            font,
-            range: 0..content.len(),
+            range: 0..text_run.text.len(),
+            text_run,
         }
     }
 
     pub fn get_text(&self) -> &str {
-        let text = match &self.styled_node.node.node_type {
-            NodeType::Text(text) => text,
-            _ => unreachable!(),
-        };
-        &text[self.range.clone()]
+        &self.text_run.text[self.range.clone()]
     }
 
     // TODO: stop splitting just before inline box
-    // TODO: consider if inline_start is NONE
     fn calculate_split_position(
         &self,
         text_node: &TextNode,
+        max_width: f32,
         remaining_width: f32,
+        font: &Font,
+        font_context: &mut FontContext,
     ) -> (Option<SplitInfo>, Option<SplitInfo>) {
         let text = text_node.get_text();
 
         let mut total_width = 0.0;
+        let mut start_position: Option<usize> = None;
+
         // priority: 1
         let mut space_position: Option<usize> = None;
         // priority: 2
-        let mut break_point: usize = text.len();
+        let mut break_point: Option<usize> = None;
 
-        let font_ref = text_node.font.as_ref();
-        let scaled_font = font_ref.as_scaled(PxScale::from(text_node.font.size));
-        for (i, c) in text.chars().enumerate() {
+        let font_ref = font.as_ref(font_context);
+        let scaled_font = font_ref.as_scaled(PxScale::from(font.size));
+        for (i, c) in text.char_indices() {
+            if start_position.is_none() {
+                start_position = Some(c.len_utf8());
+            }
             let advanced_width = scaled_font.h_advance(scaled_font.glyph_id(c));
             total_width += advanced_width;
-            if total_width > remaining_width {
-                break;
+            if total_width <= remaining_width {
+                if c.is_whitespace() {
+                    space_position = Some(i);
+                    continue;
+                }
+                // TODO: support word-break: break-all;
+                // break_point = Some(i);
             }
-            if c.is_whitespace() {
-                space_position = Some(i);
-            }
-            break_point = i;
         }
 
         if let Some(pos) = space_position {
-            break_point = pos;
+            break_point = Some(pos);
         }
 
-        break_point += text_node.range.start + 1;
+        let break_point = match break_point {
+            Some(pos) => pos + text_node.range.start + start_position.unwrap(),
+            None if total_width > max_width => {
+                return (
+                    Some(SplitInfo::new(text_node.range.start..text_node.range.end)),
+                    None,
+                )
+            },
+            None => {
+                return (
+                    None,
+                    Some(SplitInfo::new(text_node.range.start..text_node.range.end)),
+                )
+            }
+        };
 
         let inline_start = SplitInfo::new(text_node.range.start..break_point);
         let mut inline_end = None;
@@ -482,33 +509,59 @@ pub fn layout_tree<'a>(
     // TODO: Save the initial containing block height, for calculating percent heights.
     containing_block.borrow_mut().content.height = 0.0;
 
-    let mut root_box = build_layout_tree(node);
+    let mut root_box = with_thread_local_font_context(|font_context| {
+        build_layout_tree(node, None, font_context).unwrap()
+    });
     root_box.layout(containing_block);
     root_box
 }
 
-pub fn build_layout_tree<'a>(style_node: &'a StyledNode<'a>) -> LayoutBox<'a> {
-    let mut root = LayoutBox::new(match style_node.display() {
+pub fn build_layout_tree<'a>(
+    style_node: &'a StyledNode<'a>,
+    container: Option<&mut LayoutBox<'a>>,
+    font_context: &mut FontContext,
+) -> Option<LayoutBox<'a>> {
+    let box_type = match style_node.display() {
         Display::Block => BoxType::BlockNode(style_node),
         Display::Inline => match &style_node.node.node_type {
             NodeType::Element(_) => BoxType::InlineNode(style_node),
-            NodeType::Text(content) => BoxType::TextNode(TextNode::new(style_node, content)),
+            NodeType::Text(_) => {
+                let layout_box = match container {
+                    Some(layout_box) => layout_box,
+                    None => unreachable!(),
+                };
+                let text_runs = TextRun::scan_for_text(style_node, font_context);
+
+                for run in text_runs.into_iter() {
+                    let child = LayoutBox::new(BoxType::TextNode(TextNode::new(style_node, run)));
+                    layout_box.get_inline_container().children.push(child);
+                }
+
+                return None;
+            }
         },
         Display::None => panic!("Root node must has `display: none;`."),
-    });
+    };
+
+    let mut root = LayoutBox::new(box_type);
 
     for child in &style_node.children {
         match child.display() {
-            Display::Block => root.children.push(build_layout_tree(child)),
-            Display::Inline => root
-                .get_inline_container()
-                .children
-                .push(build_layout_tree(child)),
+            Display::Block => {
+                if let Some(layout_box) = build_layout_tree(child, Some(&mut root), font_context) {
+                    root.children.push(layout_box);
+                }
+            }
+            Display::Inline => {
+                if let Some(layout_box) = build_layout_tree(child, Some(&mut root), font_context) {
+                    root.get_inline_container().children.push(layout_box);
+                }
+            }
             Display::None => {}
         }
     }
 
-    root
+    Some(root)
 }
 
 #[cfg(test)]

@@ -86,6 +86,7 @@ impl Declaration {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
     Keyword(String),
+    KeywordArray(Vec<String>),
     Length(f32, Unit),
     Number(f32),
     ColorValue(Color),

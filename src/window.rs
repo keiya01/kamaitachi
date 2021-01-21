@@ -7,7 +7,7 @@ use std::rc::Rc;
 use std::{env, fs, io};
 
 use crate::cssom::{Origin, Stylesheet};
-use crate::layout::{layout_tree, Dimensions};
+use crate::layout::{font, layout_tree, Dimensions};
 use crate::painter;
 use crate::parser::{css, html};
 use crate::style::create_style_tree;
@@ -41,16 +41,22 @@ impl<'a> Sandbox for Window {
     fn view(&mut self) -> Element<Message> {
         let mut wrapper = Wrapper::default();
 
-        for item in &self.items {
-            wrapper.items.push(match item {
-                DisplayCommand::SolidColor(color, rect) => {
-                    painter::create_block(color.clone(), rect.clone())
-                }
-                DisplayCommand::Text(text, color, rect, font) => {
-                    painter::create_text(text.into(), color.clone(), rect.clone(), font.clone())
-                }
-            });
-        }
+        font::with_thread_local_font_context(|font_context| {
+            for item in &self.items {
+                wrapper.items.push(match item {
+                    DisplayCommand::SolidColor(color, rect) => {
+                        painter::create_block(color.clone(), rect.clone())
+                    }
+                    DisplayCommand::Text(text, color, rect, font) => painter::create_text(
+                        text.into(),
+                        color.clone(),
+                        rect.clone(),
+                        font.clone(),
+                        font_context,
+                    ),
+                });
+            }
+        });
 
         wrapper.into()
     }

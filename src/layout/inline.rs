@@ -1,4 +1,4 @@
-use super::font::Font;
+use super::font::{with_thread_local_font_context, Font, FontCacheKey, FontContext};
 use super::{BoxType, Dimensions, LayoutBox, Rect, SplitInfo, TextNode};
 use std::collections::VecDeque;
 use std::iter::Iterator;
@@ -51,6 +51,7 @@ struct LineBreaker<'a> {
     // Largest width in each lines
     max_width: f32,
     cur_height: f32,
+    metrics: LineMetrics,
 }
 
 impl<'a> LineBreaker<'a> {
@@ -62,6 +63,7 @@ impl<'a> LineBreaker<'a> {
             pending_line: Line::new(Default::default()),
             max_width: 0.0,
             cur_height: 0.0,
+            metrics: LineMetrics::new(),
         }
     }
 
@@ -69,7 +71,9 @@ impl<'a> LineBreaker<'a> {
     where
         I: Iterator<Item = LayoutBox<'a>>,
     {
-        self.layout_boxes(root, iter_old_boxes);
+        with_thread_local_font_context(|font_context| {
+            self.layout_boxes(root, iter_old_boxes, font_context)
+        });
     }
 
     fn next_layout_box<I>(&mut self, iter_old_boxes: &mut I) -> Option<LayoutBox<'a>>
@@ -79,12 +83,16 @@ impl<'a> LineBreaker<'a> {
         self.work_list.pop_front().or_else(|| iter_old_boxes.next())
     }
 
-    fn layout_boxes<I>(&mut self, root: &Dimensions, iter_old_boxes: &mut I)
-    where
+    fn layout_boxes<I>(
+        &mut self,
+        root: &Dimensions,
+        iter_old_boxes: &mut I,
+        font_context: &mut FontContext,
+    ) where
         I: Iterator<Item = LayoutBox<'a>>,
     {
         while let Some(layout_box) = &mut self.next_layout_box(iter_old_boxes) {
-            self.layout(root, layout_box);
+            self.layout(root, layout_box, font_context);
 
             self.pending_line.range.end += 1;
             self.new_boxes.push(layout_box.clone());
@@ -99,13 +107,18 @@ impl<'a> LineBreaker<'a> {
         }
     }
 
-    fn layout(&mut self, root: &Dimensions, layout_box: &mut LayoutBox<'a>) {
+    fn layout(
+        &mut self,
+        root: &Dimensions,
+        layout_box: &mut LayoutBox<'a>,
+        font_context: &mut FontContext,
+    ) {
         if self.pending_line_is_empty() {
             let line_bounds = self.initial_line_placement(root, layout_box);
             self.pending_line.bounds.content.x = line_bounds.content.x;
             self.pending_line.bounds.content.y = line_bounds.content.y;
             self.pending_line.green_zone.width = line_bounds.content.width;
-            if self.lines.len() != 0 {
+            if !self.lines.is_empty() {
                 let last_line_index = self.lines.len() - 1;
                 let end_last_line_range = self.lines[last_line_index].range.end;
                 self.pending_line.range = end_last_line_range..end_last_line_range;
@@ -113,14 +126,19 @@ impl<'a> LineBreaker<'a> {
         }
 
         match &layout_box.box_type {
-            BoxType::InlineNode(_) => self.layout_inline(root, layout_box),
-            BoxType::TextNode(_) => self.layout_text(layout_box),
+            BoxType::InlineNode(_) => self.layout_inline(root, layout_box, font_context),
+            BoxType::TextNode(_) => self.layout_text(layout_box, font_context),
             BoxType::BlockNode(_) => unimplemented!(),
             _ => unreachable!(),
         }
     }
 
-    fn layout_inline(&mut self, root: &Dimensions, layout_box: &mut LayoutBox<'a>) {
+    fn layout_inline(
+        &mut self,
+        root: &Dimensions,
+        layout_box: &mut LayoutBox<'a>,
+        font_context: &mut FontContext,
+    ) {
         if !layout_box.is_splitted {
             layout_box.assign_horizontal_margin_box();
         }
@@ -131,7 +149,7 @@ impl<'a> LineBreaker<'a> {
             self.pending_line.bounds.content.width += d.margin_left_offset();
         }
 
-        self.calculate_inline_descendant_position(root, layout_box);
+        self.calculate_inline_descendant_position(root, layout_box, font_context);
 
         {
             let d = layout_box.dimensions.borrow();
@@ -143,6 +161,7 @@ impl<'a> LineBreaker<'a> {
         &mut self,
         root: &Dimensions,
         layout_box: &mut LayoutBox<'a>,
+        font_context: &mut FontContext,
     ) {
         let mut total_width = 0.;
         let containing_block = &layout_box.dimensions;
@@ -156,7 +175,17 @@ impl<'a> LineBreaker<'a> {
                 continue;
             }
 
-            self.layout(root, child);
+            self.layout(root, child, font_context);
+
+            if let BoxType::TextNode(node) = &child.box_type {
+                let ascent = font_context
+                    .get_or_create_by(&node.text_run.cache_key)
+                    .ascent;
+                let mut d = containing_block.borrow_mut();
+                if ascent > d.content.height {
+                    d.content.height = ascent;
+                }
+            }
 
             // Child is text node in here
             if self.pending_line.is_line_broken {
@@ -177,7 +206,7 @@ impl<'a> LineBreaker<'a> {
         }
 
         // inline_end
-        if self.pending_line.is_line_broken && broken_line_children.len() != 0 {
+        if self.pending_line.is_line_broken && !broken_line_children.is_empty() {
             end_layout_box.children = broken_line_children;
             end_layout_box.reset_edge_left();
             self.work_list.push_front(end_layout_box);
@@ -188,21 +217,42 @@ impl<'a> LineBreaker<'a> {
         {
             let mut containing_block = containing_block.borrow_mut();
             containing_block.content.width = total_width;
-            containing_block.content.height =
-                Font::new_from_style(layout_box.get_style_node()).ascent;
+            let styled_node = layout_box.get_style_node();
+            let ascent = font_context
+                .get_or_create_by(&FontCacheKey::new_from_style(styled_node))
+                .ascent;
+            if ascent > containing_block.content.height {
+                containing_block.content.height = ascent;
+            }
         }
         if self.pending_line.line_state.inline_end.is_some() {
             layout_box.reset_edge_right();
         }
     }
 
-    fn layout_text(&mut self, layout_box: &mut LayoutBox<'a>) {
+    fn layout_text(&mut self, layout_box: &mut LayoutBox<'a>, font_context: &mut FontContext) {
         let node = match &mut layout_box.box_type {
             BoxType::TextNode(node) => node,
             _ => unreachable!(),
         };
 
-        let text_width = self.text_width(node);
+        let font = font_context.get_or_create_by(&node.text_run.cache_key);
+
+        let metrics = self
+            .pending_line
+            .metrics
+            .calc_space(node.styled_node.line_height(), &font);
+        self.metrics.space_above_baseline = self
+            .metrics
+            .space_above_baseline
+            .max(metrics.space_above_baseline);
+        self.metrics.space_under_baseline = self
+            .metrics
+            .space_under_baseline
+            .max(metrics.space_under_baseline);
+        self.metrics.leading = self.metrics.leading.max(metrics.leading);
+
+        let text_width = self.text_width(node, &font, font_context);
 
         let remaining_width =
             self.pending_line.green_zone.width - self.pending_line.bounds.content.width;
@@ -210,7 +260,8 @@ impl<'a> LineBreaker<'a> {
         if text_width >= remaining_width || self.pending_line.is_line_broken {
             self.pending_line.is_line_broken = true;
 
-            let (inline_start, inline_end) = node.calculate_split_position(node, remaining_width);
+            let (inline_start, inline_end) =
+                node.calculate_split_position(node, self.pending_line.green_zone.width, remaining_width, &font, font_context);
 
             if let Some(inline_start) = &inline_start {
                 let mut node = match &mut layout_box.box_type {
@@ -225,14 +276,10 @@ impl<'a> LineBreaker<'a> {
                     node.range.end -= 1;
                 }
 
-                let metrics = self
-                    .pending_line
-                    .metrics
-                    .calc_space(node, node.styled_node.line_height());
-                let text_width = self.text_width(node);
+                let text_width = self.text_width(node, &font, font_context);
                 {
                     let mut d = layout_box.dimensions.borrow_mut();
-                    d.content.height = node.font.ascent + node.font.descent;
+                    d.content.height = font.ascent + font.descent;
                     // Maybe, this calculation is specific case for `iced`
                     d.content.y -= metrics.leading / 2.;
                     d.content.width = text_width;
@@ -257,10 +304,10 @@ impl<'a> LineBreaker<'a> {
             let metrics = self
                 .pending_line
                 .metrics
-                .calc_space(node, node.styled_node.line_height());
+                .calc_space(node.styled_node.line_height(), &font);
             {
                 let mut d = layout_box.dimensions.borrow_mut();
-                d.content.height = node.font.ascent + node.font.descent;
+                d.content.height = font.ascent + font.descent;
                 // Maybe, this calculation is specific case for `iced`
                 d.content.y -= metrics.leading / 2.;
                 d.content.width = text_width;
@@ -282,10 +329,10 @@ impl<'a> LineBreaker<'a> {
         root.clone()
     }
 
-    fn text_width(&self, node: &TextNode<'a>) -> f32 {
+    fn text_width(&self, node: &TextNode<'a>, font: &Font, font_context: &mut FontContext) -> f32 {
         let text = node.get_text();
         // TODO: optimize to load font only once
-        node.font.width(text)
+        font.width(text, font_context)
     }
 
     fn pending_line_is_empty(&self) -> bool {
@@ -332,7 +379,7 @@ impl<'a> InlineBox<'a> {
             let mut line_box_x = line.bounds.content.x;
             for item in &mut line_breaker.new_boxes[line.range.clone()] {
                 let new_rect_y =
-                    line_breaker.cur_height + line.bounds.content.y + line.metrics.leading;
+                    line_breaker.cur_height + line.bounds.content.y + line_breaker.metrics.leading;
                 {
                     let mut d = item.dimensions.borrow_mut();
                     d.content.x += line_box_x + d.margin_left_offset();
@@ -348,8 +395,8 @@ impl<'a> InlineBox<'a> {
                 line_box_x += line_box_width;
                 line_breaker.max_width = line_box_width.max(line_breaker.max_width);
             }
-            line_breaker.cur_height +=
-                line.metrics.space_above_baseline + line.metrics.space_under_baseline;
+            line_breaker.cur_height += line_breaker.metrics.space_above_baseline
+                + line_breaker.metrics.space_under_baseline;
         }
     }
 
@@ -411,10 +458,9 @@ impl LineMetrics {
         }
     }
 
-    fn calc_space(&mut self, text_node: &TextNode, line_height: f32) -> LineMetrics {
-        let font_metrics = &text_node.font;
-        let ascent = font_metrics.ascent;
-        let descent = font_metrics.descent;
+    fn calc_space(&mut self, line_height: f32, font: &Font) -> LineMetrics {
+        let ascent = font.ascent;
+        let descent = font.descent;
         let leading = line_height - (ascent + descent);
 
         let half_leading = leading / 2.;

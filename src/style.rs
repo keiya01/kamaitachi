@@ -1,14 +1,14 @@
 // TODO
 // - [ ] Computed Values
-// - [ ] Inheritance
 // - [ ] Initial
 
 use std::collections::HashMap;
 
-use crate::{cssom, dom, layout, parser};
+use crate::{cssom, dom, font_list, layout, parser};
 use cssom::*;
 use dom::{ElementData, Node, NodeType};
-use layout::font::FamilyName;
+use font_list::{get_generic_fonts, DEFAULT_FONT_FAMILY_NAME};
+use layout::font::{FontStyle, FontWeight};
 use parser::css::CSSParser;
 
 // Map from CSS property names to values.
@@ -35,7 +35,14 @@ const MEDIUM: f32 = 1.3;
 const SMALL: f32 = 1.1;
 const X_SMALL: f32 = 1.;
 
-const INHERITABLE_PROPERTY_LIST: [&str; 3] = ["font-size", "color", "line-height"];
+const INHERITABLE_PROPERTY_LIST: [&str; 6] = [
+    "font-size",
+    "color",
+    "line-height",
+    "font-family",
+    "font-weight",
+    "font-style",
+];
 
 impl<'a> StyledNode<'a> {
     pub fn new(
@@ -70,8 +77,39 @@ impl<'a> StyledNode<'a> {
             .unwrap_or_else(|| self.value(fallback_name).unwrap_or_else(|| default.clone()))
     }
 
-    pub fn font_family(&self) -> Option<&[FamilyName]> {
-        Some(&[FamilyName::SansSerif, FamilyName::Serif])
+    /// Font families are supported only for macos.
+    pub fn font_family(&self) -> Vec<String> {
+        let generic_fonts = get_generic_fonts();
+        let default_families = vec![DEFAULT_FONT_FAMILY_NAME.to_string(); 1];
+        let value = match self.value("font-family") {
+            Some(val) => val,
+            None => return default_families,
+        };
+
+        match value {
+            Value::Keyword(val) => match generic_fonts.get(&val) {
+                Some(val) => val.clone(),
+                None => default_families,
+            },
+            Value::KeywordArray(arr) => {
+                let mut families = vec![];
+                for item in arr.into_iter() {
+                    match generic_fonts.get(&item) {
+                        Some(val) => {
+                            for name in val {
+                                families.push(name.clone());
+                            }
+                        }
+                        None => continue,
+                    }
+                }
+                if families.is_empty() {
+                    return default_families;
+                }
+                families
+            }
+            _ => default_families,
+        }
     }
 
     pub fn font_size(&self) -> f32 {
@@ -80,6 +118,35 @@ impl<'a> StyledNode<'a> {
             .unwrap_or_else(|| default_font_size)
             .to_px()
             * MEDIUM
+    }
+
+    pub fn font_style(&self) -> FontStyle {
+        let default_font_style = Value::Keyword("normal".to_string());
+        let val = self
+            .value("font-style")
+            .unwrap_or_else(|| default_font_style);
+        let keyword = match val {
+            Value::Keyword(s) => s,
+            _ => return FontStyle::Normal,
+        };
+        match &keyword[..] {
+            "italic" => FontStyle::Italic,
+            "oblique" => FontStyle::Oblique,
+            _ => FontStyle::Normal,
+        }
+    }
+
+    pub fn font_weight(&self) -> FontWeight {
+        let normal = 400.;
+        let default_font_weight = Value::Number(normal);
+        let val = self
+            .value("font-weight")
+            .unwrap_or_else(|| default_font_weight);
+        let num = match val {
+            Value::Number(n) => n,
+            _ => return FontWeight(normal),
+        };
+        FontWeight(num)
     }
 
     pub fn line_height(&self) -> f32 {

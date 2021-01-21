@@ -125,12 +125,31 @@ impl CSSParser {
         match self.next_char() {
             '0'..='9' => self.parse_length(),
             '#' => self.parse_color(),
-            c if valid_identifier_char(c) => Value::Keyword(self.parse_identifier()),
+            c if valid_identifier_char(c) => self.parse_keyword(),
             _ => {
                 self.consume_while(|c| c != '}');
                 Value::None
             }
         }
+    }
+
+    fn parse_keyword(&mut self) -> Value {
+        let keyword = self.parse_identifier();
+        self.consume_whitespace();
+        if self.next_char() != ',' {
+            return Value::Keyword(keyword);
+        }
+        let mut keyword_array = vec![keyword];
+        while self.next_char() == ',' {
+            self.consume_char();
+            self.consume_whitespace();
+            if self.next_char() == ';' {
+                break;
+            }
+            let keyword = self.parse_identifier();
+            keyword_array.push(keyword);
+        }
+        Value::KeywordArray(keyword_array)
     }
 
     fn parse_length(&mut self) -> Value {
@@ -419,6 +438,41 @@ h1 {}
                 assert_eq!(keyword, &"auto");
             } else {
                 panic!("declaration.value should has Keyword");
+            };
+        }
+    }
+
+    #[test]
+    fn test_parse_keyword_array() {
+        let input = "
+.class {
+    font-family: serif,  sans-serif,cursive,;
+}
+";
+
+        let mut p = CSSParser::new(input.into());
+
+        let rules = p.parse_rules(Origin::Author);
+        let stylesheet = Stylesheet::new(rules);
+
+        assert_eq!(&stylesheet.rules.len(), &1);
+        for rule in stylesheet.rules {
+            let Selector::Simple(selector) = &rule.selectors[0];
+            assert_eq!(&selector.class[0], &"class");
+
+            let declaration = &rule.declarations[0];
+            assert_eq!(&declaration.name, "font-family");
+            if let Value::KeywordArray(arr) = &declaration.value {
+                assert_eq!(
+                    arr,
+                    &[
+                        "serif".to_string(),
+                        "sans-serif".to_string(),
+                        "cursive".to_string()
+                    ]
+                );
+            } else {
+                panic!("declaration.value should has KeywordArray");
             };
         }
     }

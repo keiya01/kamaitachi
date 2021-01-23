@@ -1,6 +1,24 @@
 <div class="container">
-  <div style="background: #000000; padding: 10px;">
-    <p style="background: #00ffff;">Hello <span class="world">World<span class="hey">Hey To enable WebAssembly to be read and edited by humans, there is a textual representation of <span class="wasm">the wasm binary format</span>. This is an intermediate form designed to be exposed in text editors, browser developer tools, etc. This article explains how that text format works, in terms of the raw syntax, and how it is related to the underlying bytecode it represents.</span><span style="background: #ccaa00ff;">TEST</span></span>WEB</p>
-    <p style="background: #ff00ff;"><span class="hey">Hey</span>, Browser</p>
+  <div class="main">
+    <h1>About kamaitachi</h1>
+    <p>
+      <span class="italic">kamaitachi</span>は学習用にフルスクラッチで書かれたブラウザです。Parse、Style(Render Treeの構築)、Layout、Paintの処理を一部ライブラリを使っていますが、基本的にはフルスクラッチで実装しています。
+      言語はRustを使って実装されており、Servoを参考に実装を進めています。
+    </p>
+    <p>
+      ここでは<span class="italic">kamaitachi</span>がどのように処理されているのかを簡単に説明します。
+    </p>
+    <h2>Parse</h2>
+    <p>
+      Parse処理では、HTMLファイルに書かれているプログラムをDOMにparseしたり、CSSをCSSOMへとparseします。DOMやCSSOMはファイルに書かれている、tagやattribute、selectorやpropertyなどのプログラムをTree構造にまとめていく作業です。
+      この処理を行うことでStyle処理でDOMとCSSを合体させやすくします。
+    </p>
+    <h2>Style(Render Treeの構築)</h2>
+    <p>Render Treeの構築では、DOMやCSSOMをtraverseして、各Nodeに一致するCSSルールを適用していきます。</p>
+    <h2>Layout</h2>
+    <p>Layout処理では、Render Treeをdisplay propertyによって各Boxに分類したり、各Nodeの正確なpositionを決定していきます。</p>
+    <p>Boxというのは、<span class="code">display: block;</span>と<span class="code">display: inline;</span>では配置の方法が違うので、displayごとにboxに分けて、それぞれのpositionを決定しやすくします。</p>
+    <h2>Paint</h2>
+    <p>Paint処理では、Layout処理で決定したpositionを基に実際にGUIとしてレンダリングしていきます。</p>
   </div>
 </div>

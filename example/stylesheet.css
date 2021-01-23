@@ -1,34 +1,52 @@
-div, p {
+div, h1, h2, p {
   display: block;
+}
+
+h1, h2 {
+  font-family: sans-serif;
+  font-weight: 600;
+}
+
+h1 {
+  font-size: 20px;
+  margin-bottom: 20px;
+}
+
+h2 {
+  font-size: 18px;
+  margin-top: 50px;
+  margin-bottom: 20px;
+  border-bottom-width: 1px;
+  border-color: #cccccc;
+}
+
+p {
+  font-family: serif;
 }
 
 span {
   display: inline;
-  padding: 3px;
-  margin: 5px;
-  border-color: #ff0f0f;
-  border-left-width: 1px;
-  border-top-width: 1px;
-  border-right-width: 1px;
-  border-bottom-width: 1px;
 }
 
 .container {
-  font-size: 20px;
+  width: 1200px;
+  height: auto;
+  background: #eeeeee;
+}
+
+.main {
+  height: auto;
+  width: 600px;
+  background: #ffffff;
+  margin: auto;
   padding: 10px;
 }
 
-.world {
-  background: #0f00f0;
-  color: #ff00ff;
-}
-
-.wasm {
-  background: #000000;
+.code {
+  background: #333333;
   color: #ffffff;
 }
 
-.hey {
-  background: #00ff00;
-  color: #ff0f0f;
+.italic {
+  font-style: italic;
 }

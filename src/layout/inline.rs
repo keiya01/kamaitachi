@@ -83,6 +83,8 @@ impl<'a> LineBreaker<'a> {
         self.work_list.pop_front().or_else(|| iter_old_boxes.next())
     }
 
+    // TODO: Stop splitting with before specific character if character is not splittable.
+    // refer https://unicode.org/reports/tr14/
     fn layout_boxes<I>(
         &mut self,
         root: &Dimensions,
@@ -164,7 +166,6 @@ impl<'a> LineBreaker<'a> {
         font_context: &mut FontContext,
     ) {
         let mut total_width = 0.;
-        let containing_block = &layout_box.dimensions;
         let mut new_children = vec![];
         let mut broken_line_children = vec![];
         let mut end_layout_box: LayoutBox<'a> = layout_box.clone();
@@ -181,7 +182,7 @@ impl<'a> LineBreaker<'a> {
                 let ascent = font_context
                     .get_or_create_by(&node.text_run.cache_key)
                     .ascent;
-                let mut d = containing_block.borrow_mut();
+                let mut d = layout_box.dimensions.borrow_mut();
                 if ascent > d.content.height {
                     d.content.height = ascent;
                 }
@@ -205,6 +206,14 @@ impl<'a> LineBreaker<'a> {
             new_children.push(child.clone());
         }
 
+        match (
+            &self.pending_line.line_state.inline_start,
+            &self.pending_line.line_state.inline_end,
+        ) {
+            (Some(_), Some(_)) | (None, Some(_)) => layout_box.reset_edge_right(),
+            _ => {}
+        }
+
         // inline_end
         if self.pending_line.is_line_broken && !broken_line_children.is_empty() {
             end_layout_box.children = broken_line_children;
@@ -215,7 +224,7 @@ impl<'a> LineBreaker<'a> {
         // inline_start
         layout_box.children = new_children;
         {
-            let mut containing_block = containing_block.borrow_mut();
+            let mut containing_block = layout_box.dimensions.borrow_mut();
             containing_block.content.width = total_width;
             let styled_node = layout_box.get_style_node();
             let ascent = font_context
@@ -224,9 +233,6 @@ impl<'a> LineBreaker<'a> {
             if ascent > containing_block.content.height {
                 containing_block.content.height = ascent;
             }
-        }
-        if self.pending_line.line_state.inline_end.is_some() {
-            layout_box.reset_edge_right();
         }
     }
 
@@ -260,8 +266,13 @@ impl<'a> LineBreaker<'a> {
         if text_width >= remaining_width || self.pending_line.is_line_broken {
             self.pending_line.is_line_broken = true;
 
-            let (inline_start, inline_end) =
-                node.calculate_split_position(node, self.pending_line.green_zone.width, remaining_width, &font, font_context);
+            let (inline_start, inline_end) = node.calculate_split_position(
+                node,
+                self.pending_line.green_zone.width,
+                remaining_width,
+                &font,
+                font_context,
+            );
 
             if let Some(inline_start) = &inline_start {
                 let mut node = match &mut layout_box.box_type {

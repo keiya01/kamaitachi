@@ -35,14 +35,31 @@ const MEDIUM: f32 = 1.3;
 const SMALL: f32 = 1.1;
 const X_SMALL: f32 = 1.;
 
-const INHERITABLE_PROPERTY_LIST: [&str; 6] = [
+const INHERITABLE_PROPERTY_LIST: [&str; 7] = [
     "font-size",
     "color",
     "line-height",
     "font-family",
     "font-weight",
     "font-style",
+    "word-break",
 ];
+
+pub enum WordBreak {
+    Normal,
+    BreakAll,
+    KeepAll,
+}
+
+impl WordBreak {
+    pub fn is_break_all(&self) -> bool {
+        if let WordBreak::BreakAll = self {
+            true
+        } else {
+            false
+        }
+    }
+}
 
 impl<'a> StyledNode<'a> {
     pub fn new(
@@ -156,6 +173,25 @@ impl<'a> StyledNode<'a> {
             .unwrap_or_else(|| default_line_height)
             .to_px();
         self.font_size() * line_height
+    }
+
+    pub fn word_break(&self) -> WordBreak {
+        let word_break = self.value("word-break");
+        let value = match word_break {
+            Some(val) => val,
+            None => return WordBreak::Normal,
+        };
+
+        let keyword = match value {
+            Value::Keyword(keyword) => keyword,
+            _ => return WordBreak::Normal,
+        };
+
+        match &keyword[..] {
+            "break-all" => WordBreak::BreakAll,
+            "keep-all" => WordBreak::KeepAll,
+            _ => WordBreak::Normal,
+        }
     }
 }
 

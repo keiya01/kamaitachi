@@ -82,6 +82,30 @@ impl Dimensions {
     pub fn margin_right_offset(&self) -> f32 {
         self.border_right_offset() + self.margin.right
     }
+
+    pub fn reset_edge_top(&mut self) {
+        self.padding.top = 0.;
+        self.border.top = 0.;
+        self.margin.top = 0.;
+    }
+
+    pub fn reset_edge_bottom(&mut self) {
+        self.padding.bottom = 0.;
+        self.border.bottom = 0.;
+        self.margin.bottom = 0.;
+    }
+
+    pub fn reset_edge_left(&mut self) {
+        self.padding.left = 0.;
+        self.border.left = 0.;
+        self.margin.left = 0.;
+    }
+
+    pub fn reset_edge_right(&mut self) {
+        self.padding.right = 0.;
+        self.border.right = 0.;
+        self.margin.right = 0.;
+    }
 }
 
 #[derive(Default, Debug, Clone)]
@@ -365,22 +389,14 @@ impl<'a> LayoutBox<'a> {
     }
 
     fn reset_edge_left(&mut self) {
-        self.is_splitted = true;
-        let mut d = self.dimensions.borrow_mut();
-        d.margin.left = 0.;
-        d.border.left = 0.;
-        d.padding.left = 0.;
+        self.dimensions.borrow_mut().reset_edge_left();
         if !self.children.is_empty() {
             self.children[0].reset_edge_left();
         }
     }
 
     fn reset_edge_right(&mut self) {
-        self.is_splitted = true;
-        let mut d = self.dimensions.borrow_mut();
-        d.margin.right = 0.;
-        d.border.right = 0.;
-        d.padding.right = 0.;
+        self.dimensions.borrow_mut().reset_edge_right();
         let len = self.children.len();
         if len != 0 {
             self.children[len - 1].reset_edge_right();
@@ -416,7 +432,7 @@ impl<'a> TextNode<'a> {
         &self.text_run.text[self.range.clone()]
     }
 
-    // TODO: stop splitting just before inline box
+    // TODO: stop splitting before inline box(span)
     fn calculate_split_position(
         &self,
         text_node: &TextNode,
@@ -435,6 +451,12 @@ impl<'a> TextNode<'a> {
         // priority: 2
         let mut break_point: Option<usize> = None;
 
+        let is_break_all = if let WordBreak::BreakAll = text_node.styled_node.word_break() {
+            true
+        } else {
+            false
+        };
+
         let font_ref = font.as_ref(font_context);
         let scaled_font = font_ref.as_scaled(PxScale::from(font.size));
         for (i, c) in text.char_indices() {
@@ -443,19 +465,35 @@ impl<'a> TextNode<'a> {
             }
             let advanced_width = scaled_font.h_advance(scaled_font.glyph_id(c));
             total_width += advanced_width;
-            if total_width <= remaining_width {
-                if c.is_whitespace() {
-                    space_position = Some(i);
-                    continue;
+            if total_width < remaining_width {
+                if is_break_all {
+                    if c.is_whitespace() {
+                        space_position = Some(i);
+                        continue;
+                    }
+                    if space_position.is_some() {
+                        break_point = space_position;
+                        space_position = None;
+                    } else {
+                        break_point = Some(i);
+                    }
+                } else {
+                    if c.is_whitespace() {
+                        space_position = Some(i);
+                    }
                 }
-                // TODO: support word-break: break-all;
-                // break_point = Some(i);
             }
         }
 
-        if let Some(pos) = space_position {
-            break_point = Some(pos);
-        }
+        let break_point = if is_break_all {
+            if space_position.is_some() {
+                space_position
+            } else {
+                break_point
+            }
+        } else {
+            space_position
+        };
 
         let break_point = match break_point {
             Some(pos) => pos + text_node.range.start + start_position.unwrap(),
@@ -464,7 +502,7 @@ impl<'a> TextNode<'a> {
                     Some(SplitInfo::new(text_node.range.start..text_node.range.end)),
                     None,
                 )
-            },
+            }
             None => {
                 return (
                     None,
@@ -487,11 +525,15 @@ impl<'a> TextNode<'a> {
 #[derive(Clone)]
 pub struct SplitInfo {
     range: Range<usize>,
+    overflowing: bool,
 }
 
 impl SplitInfo {
     pub fn new(range: Range<usize>) -> SplitInfo {
-        SplitInfo { range }
+        SplitInfo {
+            range,
+            overflowing: false,
+        }
     }
 }
 

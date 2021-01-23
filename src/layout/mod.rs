@@ -433,6 +433,7 @@ impl<'a> TextNode<'a> {
     }
 
     // TODO: stop splitting before inline box(span)
+    // TODO: support hyphenation
     fn calculate_split_position(
         &self,
         text_node: &TextNode,
@@ -446,9 +447,7 @@ impl<'a> TextNode<'a> {
         let mut total_width = 0.0;
         let mut start_position: Option<usize> = None;
 
-        // priority: 1
         let mut space_position: Option<usize> = None;
-        // priority: 2
         let mut break_point: Option<usize> = None;
 
         let is_break_all = if let WordBreak::BreakAll = text_node.styled_node.word_break() {

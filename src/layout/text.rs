@@ -116,6 +116,7 @@ fn is_specific(script: Script) -> bool {
     script != Script::Common && script != Script::Inherited
 }
 
+// TODO: check whitespace between another node too.
 fn transform_text(content: &str, start_pos: &mut usize, end_pos: usize) -> String {
     let mut text = String::new();
     let sliced_content = &content[(*start_pos)..end_pos];

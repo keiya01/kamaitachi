@@ -502,7 +502,7 @@ impl<'a> TextNode<'a> {
                     Some(SplitInfo::new(text_node.range.start..text_node.range.end)),
                     None,
                 )
-            },
+            }
             None => {
                 return (
                     None,
@@ -530,7 +530,10 @@ pub struct SplitInfo {
 
 impl SplitInfo {
     pub fn new(range: Range<usize>) -> SplitInfo {
-        SplitInfo { range, overflowing: false }
+        SplitInfo {
+            range,
+            overflowing: false,
+        }
     }
 }
 

@@ -70,11 +70,9 @@ impl TextRun {
                 };
 
                 let has_font = match &font {
-                    Some(font) => {
-                      match &new_font {
+                    Some(font) => match &new_font {
                         Some(new_font) => font.family_name == new_font.family_name,
                         None => false,
-                      }
                     },
                     None => false,
                 };
@@ -98,12 +96,12 @@ impl TextRun {
         }
 
         if start_pos != end_pos {
-          text_runs.push(TextRun::new(
-              transform_text(content, &mut start_pos, end_pos),
-              size,
-              descriptor,
-              font.unwrap(),
-          ));
+            text_runs.push(TextRun::new(
+                transform_text(content, &mut start_pos, end_pos),
+                size,
+                descriptor,
+                font.unwrap(),
+            ));
         }
 
         text_runs

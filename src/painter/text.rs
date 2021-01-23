@@ -24,7 +24,7 @@ pub fn create_text(
         size: font.size,
         font: Font::External {
             bytes: font.get_static_font_data(font_context),
-            name: font.get_static_font_family(),
+            name: font.get_static_hashed_family_name(),
         },
         horizontal_alignment: HorizontalAlignment::Left,
         vertical_alignment: VerticalAlignment::Top,

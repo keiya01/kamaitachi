@@ -226,13 +226,6 @@ impl<'a> LineBreaker<'a> {
         {
             let mut containing_block = layout_box.dimensions.borrow_mut();
             containing_block.content.width = total_width;
-            let styled_node = layout_box.get_style_node();
-            let ascent = font_context
-                .get_or_create_by(&FontCacheKey::new_from_style(styled_node))
-                .ascent;
-            if ascent > containing_block.content.height {
-                containing_block.content.height = ascent;
-            }
         }
     }
 

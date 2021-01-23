@@ -24,6 +24,7 @@ impl TextRun {
         }
     }
 
+    // TODO: check if character is splittable(Script::Common is not splittable).
     pub fn scan_for_text(styled_node: &StyledNode, font_context: &mut FontContext) -> Vec<TextRun> {
         let content = match &styled_node.node.node_type {
             NodeType::Text(text) => text,
@@ -43,7 +44,7 @@ impl TextRun {
                 let has_glyph = |font: &Font| font.glyph_index(ch).is_some();
 
                 let new_script = Script::from(ch);
-                let compatible_script = is_compatible(script, new_script);
+                let compatible_script = is_compatible(new_script, script);
                 if compatible_script && !is_specific(script) && is_specific(new_script) {
                     // Initialize Script::Common to new_script, if new_script is specific
                     script = new_script;
@@ -69,7 +70,12 @@ impl TextRun {
                 };
 
                 let has_font = match &font {
-                    Some(font) => has_glyph(font),
+                    Some(font) => {
+                      match &new_font {
+                        Some(new_font) => font.family_name == new_font.family_name,
+                        None => false,
+                      }
+                    },
                     None => false,
                 };
 
@@ -91,19 +97,21 @@ impl TextRun {
             end_pos += ch.len_utf8();
         }
 
-        text_runs.push(TextRun::new(
-            transform_text(content, &mut start_pos, end_pos),
-            size,
-            descriptor,
-            font.unwrap(),
-        ));
+        if start_pos != end_pos {
+          text_runs.push(TextRun::new(
+              transform_text(content, &mut start_pos, end_pos),
+              size,
+              descriptor,
+              font.unwrap(),
+          ));
+        }
 
         text_runs
     }
 }
 
-fn is_compatible(old: Script, new: Script) -> bool {
-    old == new
+fn is_compatible(new: Script, old: Script) -> bool {
+    new == old || !is_specific(new) || !is_specific(old)
 }
 
 fn is_specific(script: Script) -> bool {

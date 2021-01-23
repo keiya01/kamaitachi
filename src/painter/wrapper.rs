@@ -3,17 +3,18 @@ use iced_native::{layout, mouse, Element, Hasher, Layout, Length, Point, Rectang
 
 pub struct Wrapper {
     pub items: Vec<Primitive>,
+    size: Size,
 }
 
 impl Wrapper {
-    pub fn new() -> Wrapper {
-        Wrapper { items: vec![] }
+    pub fn new(height: f32, width: f32) -> Wrapper {
+        Wrapper { items: vec![], size: Size::new(width, height) }
     }
 }
 
 impl Default for Wrapper {
     fn default() -> Wrapper {
-        Wrapper::new()
+        Wrapper::new(0., 0.)
     }
 }
 
@@ -22,15 +23,15 @@ where
     B: Backend,
 {
     fn width(&self) -> Length {
-        Length::Shrink
+        Length::Units(self.size.width as u16)
     }
-
+    
     fn height(&self) -> Length {
-        Length::Shrink
+        Length::Units(self.size.height as u16)
     }
 
     fn layout(&self, _renderer: &Renderer<B>, _limits: &layout::Limits) -> layout::Node {
-        layout::Node::new(Size::new(0.0, 0.0))
+        layout::Node::new(self.size)
     }
 
     fn hash_layout(&self, _state: &mut Hasher) {}

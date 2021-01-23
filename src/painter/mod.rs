@@ -17,12 +17,13 @@ pub enum DisplayCommand {
     Text(String, Color, Rect, font::Font),
 }
 
-pub fn build_display_list(layout_root: &LayoutBox) -> DisplayList {
+pub fn build_display_list(layout_root: &LayoutBox) -> (DisplayList, f32, f32) {
     let mut list = vec![];
     with_thread_local_font_context(|font_context| {
         render_layout_box(&mut list, layout_root, font_context)
     });
-    list
+    let margin_box = layout_root.dimensions.borrow().margin_box();
+    (list, margin_box.height, margin_box.width)
 }
 
 fn render_layout_box(

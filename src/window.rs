@@ -1,4 +1,4 @@
-use iced::{Element, Sandbox, Settings};
+use iced::{Element, Sandbox, Settings, Scrollable, scrollable, Space, Length, Container};
 
 use std::cell::RefCell;
 use std::io::prelude::*;
@@ -21,13 +21,17 @@ pub enum Message {}
 
 pub struct Window {
     items: DisplayList,
+    height: f32,
+    width: f32,
+    scroll: scrollable::State,
 }
 
 impl<'a> Sandbox for Window {
     type Message = Message;
 
     fn new() -> Self {
-        Window { items: prepare() }
+        let (items, height, width) = prepare();
+        Window { items, height, width, scroll: scrollable::State::new() }
     }
 
     fn title(&self) -> String {
@@ -39,7 +43,7 @@ impl<'a> Sandbox for Window {
     }
 
     fn view(&mut self) -> Element<Message> {
-        let mut wrapper = Wrapper::default();
+        let mut wrapper = Wrapper::new(self.height, self.width);
 
         font::with_thread_local_font_context(|font_context| {
             for item in &self.items {
@@ -58,11 +62,15 @@ impl<'a> Sandbox for Window {
             }
         });
 
-        wrapper.into()
+        Scrollable::new(&mut self.scroll)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .push(wrapper)
+        .into()
     }
 }
 
-fn prepare() -> DisplayList {
+fn prepare() -> (DisplayList, f32, f32) {
     let args: Vec<String> = env::args().collect();
     if args.is_empty() {
         panic!("You need to specify entry path.");
@@ -98,7 +106,7 @@ fn prepare() -> DisplayList {
     paint(html, css_list)
 }
 
-fn paint(html: String, css_list: Vec<String>) -> DisplayList {
+fn paint(html: String, css_list: Vec<String>) -> (DisplayList, f32, f32) {
     let dom = HTMLParser::new(html).run();
     let mut author_rules = vec![];
 

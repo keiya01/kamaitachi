@@ -1,4 +1,4 @@
-use iced::{Element, Sandbox, Settings, Scrollable, scrollable, Space, Length, Container};
+use iced::{Element, Sandbox, Settings, Scrollable, scrollable, Length};
 
 use std::cell::RefCell;
 use std::io::prelude::*;

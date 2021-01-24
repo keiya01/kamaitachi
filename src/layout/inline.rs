@@ -1,4 +1,4 @@
-use super::font::{with_thread_local_font_context, Font, FontCacheKey, FontContext};
+use super::font::{with_thread_local_font_context, Font, FontContext};
 use super::{BoxType, Dimensions, LayoutBox, Rect, SplitInfo, TextNode};
 use std::collections::VecDeque;
 use std::iter::Iterator;

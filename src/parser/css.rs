@@ -27,6 +27,8 @@ impl CSSParser {
         Rule::new(self.parse_selectors(), self.parse_declarations(), level)
     }
 
+    // TODO: Support chaining selector
+    // TODO: Comply specificity with specification
     fn parse_selectors(&mut self) -> Vec<Selector> {
         let mut selectors = vec![];
         loop {

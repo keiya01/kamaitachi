@@ -389,6 +389,7 @@ impl<'a> LayoutBox<'a> {
     }
 
     fn reset_edge_left(&mut self) {
+        self.is_splitted = true;
         self.dimensions.borrow_mut().reset_edge_left();
         if !self.children.is_empty() {
             self.children[0].reset_edge_left();
@@ -448,8 +449,8 @@ impl<'a> TextNode<'a> {
         let mut total_width = 0.0;
         let mut start_position: Option<usize> = None;
 
-        let mut space_position: Option<usize> = None;
-        let mut break_point: Option<usize> = None;
+        let mut break_normal_position: Option<usize> = None;
+        let mut break_all_position: Option<usize> = None;
 
         let is_break_all = if let WordBreak::BreakAll = text_node.styled_node.word_break() {
             true
@@ -468,31 +469,31 @@ impl<'a> TextNode<'a> {
             if total_width < remaining_width {
                 if is_break_all {
                     if c.is_whitespace() {
-                        space_position = Some(i);
+                        break_normal_position = Some(i);
                         continue;
                     }
-                    if space_position.is_some() {
-                        break_point = space_position;
-                        space_position = None;
+                    if break_normal_position.is_some() {
+                        break_all_position = break_normal_position;
+                        break_normal_position = None;
                     } else {
-                        break_point = Some(i);
+                        break_all_position = Some(i);
                     }
                 } else {
                     if c.is_whitespace() {
-                        space_position = Some(i);
+                        break_normal_position = Some(i);
                     }
                 }
             }
         }
 
         let break_point = if is_break_all {
-            if space_position.is_some() {
-                space_position
+            if break_normal_position.is_some() {
+                break_normal_position
             } else {
-                break_point
+                break_all_position
             }
         } else {
-            space_position
+            break_normal_position
         };
 
         let break_point = match break_point {

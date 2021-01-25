@@ -1,4 +1,4 @@
-use super::font::{with_thread_local_font_context, Font, FontContext};
+use super::font::{with_thread_local_font_context, Font, FontContext, FontCacheKey};
 use super::{BoxType, Dimensions, LayoutBox, Rect, SplitInfo, TextNode};
 use std::collections::VecDeque;
 use std::iter::Iterator;
@@ -226,6 +226,13 @@ impl<'a> LineBreaker<'a> {
         {
             let mut containing_block = layout_box.dimensions.borrow_mut();
             containing_block.content.width = total_width;
+            let styled_node = layout_box.get_style_node();
+            let ascent = font_context
+                .get_or_create_by(&FontCacheKey::new_from_style(styled_node))
+                .ascent;
+            if ascent > containing_block.content.height {
+                containing_block.content.height = ascent;
+            }
         }
     }
 
@@ -275,9 +282,9 @@ impl<'a> LineBreaker<'a> {
                 node.range = inline_start.range.clone();
 
                 // remove whitespace on line end.
-                // TODO: text should has only one whitespace.
-                if node.get_text().chars().last().unwrap().is_whitespace() {
-                    node.range.end -= 1;
+                let last_char = node.get_text().chars().last().unwrap();
+                if last_char.is_whitespace() {
+                    node.range.end -= last_char.len_utf8();
                 }
 
                 let text_width = self.text_width(node, &font, font_context);

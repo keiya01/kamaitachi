@@ -151,6 +151,7 @@ pub struct LayoutBox<'a> {
     pub children: Vec<LayoutBox<'a>>,
     /// used for line breaking
     pub is_splitted: bool,
+    pub is_hidden: bool,
 }
 
 impl<'a> Clone for LayoutBox<'a> {
@@ -170,6 +171,7 @@ impl<'a> LayoutBox<'a> {
             dimensions: Rc::new(RefCell::new(Default::default())),
             children: vec![],
             is_splitted: false,
+            is_hidden: false,
         }
     }
 
@@ -388,19 +390,22 @@ impl<'a> LayoutBox<'a> {
         d.padding.right = node.lookup("padding-right", "padding", &zero).to_px();
     }
 
-    fn reset_edge_left(&mut self) {
+    fn reset_splitted_edge_left(&mut self) {
+        if self.is_splitted {
+            return;
+        }
         self.is_splitted = true;
         self.dimensions.borrow_mut().reset_edge_left();
         if !self.children.is_empty() {
-            self.children[0].reset_edge_left();
+            self.children[0].reset_splitted_edge_left();
         }
     }
 
-    fn reset_edge_right(&mut self) {
+    fn reset_all_edge_right(&mut self) {
         self.dimensions.borrow_mut().reset_edge_right();
         let len = self.children.len();
         if len != 0 {
-            self.children[len - 1].reset_edge_right();
+            self.children[len - 1].reset_all_edge_right();
         }
     }
 }

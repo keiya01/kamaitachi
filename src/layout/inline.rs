@@ -80,7 +80,14 @@ impl<'a> LineBreaker<'a> {
     where
         I: Iterator<Item = LayoutBox<'a>>,
     {
-        self.work_list.pop_front().or_else(|| iter_old_boxes.next())
+        let item = self.work_list.pop_front();
+        match item {
+            Some(mut item) => {
+                item.reset_splitted_edge_left();
+                Some(item)
+            }
+            None => iter_old_boxes.next(),
+        }
     }
 
     // TODO: Stop splitting with before specific character if character is not splittable.
@@ -178,6 +185,17 @@ impl<'a> LineBreaker<'a> {
 
             self.layout(root, child, font_context);
 
+            // Child is text node in here
+            if self.pending_line.is_line_broken {
+                if let Some(item) = self.work_list.pop_front() {
+                    broken_line_children.push(item);
+                }
+            }
+
+            if child.is_hidden {
+                continue;
+            }
+
             if let BoxType::TextNode(node) = &child.box_type {
                 let ascent = font_context
                     .get_or_create_by(&node.text_run.cache_key)
@@ -186,12 +204,11 @@ impl<'a> LineBreaker<'a> {
                 if ascent > d.content.height {
                     d.content.height = ascent;
                 }
-            }
 
-            // Child is text node in here
-            if self.pending_line.is_line_broken {
-                if let Some(layout_box) = self.work_list.pop_front() {
-                    broken_line_children.push(layout_box.clone());
+                if self.pending_line.is_line_broken && self.pending_line.line_state.inline_start.is_none() {
+                    // Remove splitted inline start node
+                    layout_box.is_hidden = true;
+                    end_layout_box.is_splitted = true;
                 }
             }
 
@@ -210,30 +227,32 @@ impl<'a> LineBreaker<'a> {
             &self.pending_line.line_state.inline_start,
             &self.pending_line.line_state.inline_end,
         ) {
-            (Some(_), Some(_)) | (None, Some(_)) => layout_box.reset_edge_right(),
+            (Some(_), Some(_)) | (None, Some(_)) => layout_box.reset_all_edge_right(),
             _ => {}
         }
 
         // inline_end
         if self.pending_line.is_line_broken && !broken_line_children.is_empty() {
             end_layout_box.children = broken_line_children;
-            end_layout_box.reset_edge_left();
             self.work_list.push_front(end_layout_box);
         }
 
-        // inline_start
-        layout_box.children = new_children;
-        {
-            let mut containing_block = layout_box.dimensions.borrow_mut();
-            containing_block.content.width = total_width;
-            let styled_node = layout_box.get_style_node();
-            let ascent = font_context
-                .get_or_create_by(&FontCacheKey::new_from_style(styled_node))
-                .ascent;
-            if ascent > containing_block.content.height {
-                containing_block.content.height = ascent;
+        if !new_children.is_empty() {
+            // inline_start
+            layout_box.children = new_children;
+            {
+                let mut containing_block = layout_box.dimensions.borrow_mut();
+                containing_block.content.width = total_width;
+                let styled_node = layout_box.get_style_node();
+                let ascent = font_context
+                    .get_or_create_by(&FontCacheKey::new_from_style(styled_node))
+                    .ascent;
+                if ascent > containing_block.content.height {
+                    containing_block.content.height = ascent;
+                }
             }
         }
+
     }
 
     fn layout_text(&mut self, layout_box: &mut LayoutBox<'a>, font_context: &mut FontContext) {

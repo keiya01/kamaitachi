@@ -558,7 +558,8 @@ pub fn layout_tree<'a>(
     containing_block.borrow_mut().content.height = 0.0;
 
     let mut root_box = with_thread_local_font_context(|font_context| {
-        build_layout_tree(node, None, font_context).unwrap()
+        let mut last_whitespace = false;
+        build_layout_tree(node, None, font_context, &mut last_whitespace).unwrap()
     });
     root_box.layout(containing_block);
     root_box
@@ -568,6 +569,7 @@ pub fn build_layout_tree<'a>(
     style_node: &'a StyledNode<'a>,
     container: Option<&mut LayoutBox<'a>>,
     font_context: &mut FontContext,
+    last_whitespace: &mut bool,
 ) -> Option<LayoutBox<'a>> {
     let box_type = match style_node.display() {
         Display::Block => BoxType::BlockNode(style_node),
@@ -578,7 +580,7 @@ pub fn build_layout_tree<'a>(
                     Some(layout_box) => layout_box,
                     None => unreachable!(),
                 };
-                let text_runs = TextRun::scan_for_text(style_node, font_context);
+                let text_runs = TextRun::scan_for_text(style_node, font_context, last_whitespace);
 
                 for run in text_runs.into_iter() {
                     let child = LayoutBox::new(BoxType::TextNode(TextNode::new(style_node, run)));
@@ -596,12 +598,12 @@ pub fn build_layout_tree<'a>(
     for child in &style_node.children {
         match child.display() {
             Display::Block => {
-                if let Some(layout_box) = build_layout_tree(child, Some(&mut root), font_context) {
+                if let Some(layout_box) = build_layout_tree(child, Some(&mut root), font_context, last_whitespace) {
                     root.children.push(layout_box);
                 }
             }
             Display::Inline => {
-                if let Some(layout_box) = build_layout_tree(child, Some(&mut root), font_context) {
+                if let Some(layout_box) = build_layout_tree(child, Some(&mut root), font_context, last_whitespace) {
                     root.get_inline_container().children.push(layout_box);
                 }
             }

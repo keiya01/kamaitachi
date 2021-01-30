@@ -25,7 +25,7 @@ impl TextRun {
     }
 
     // TODO: check if character is splittable(Script::Common is not splittable).
-    pub fn scan_for_text(styled_node: &StyledNode, font_context: &mut FontContext) -> Vec<TextRun> {
+    pub fn scan_for_text(styled_node: &StyledNode, font_context: &mut FontContext, last_whitespace: &mut bool) -> Vec<TextRun> {
         let content = match &styled_node.node.node_type {
             NodeType::Text(text) => text,
             _ => unreachable!(),
@@ -40,7 +40,7 @@ impl TextRun {
 
         let (mut start_pos, mut end_pos) = (0, 0);
         for (_, ch) in content.char_indices() {
-            if !ch.is_whitespace() {
+            if !ch.is_control() {
                 let has_glyph = |font: &Font| font.glyph_index(ch).is_some();
 
                 let new_script = Script::from(ch);
@@ -82,7 +82,7 @@ impl TextRun {
                 if is_flush {
                     if end_pos > 0 {
                         text_runs.push(TextRun::new(
-                            transform_text(content, &mut start_pos, end_pos),
+                            transform_text(content, &mut start_pos, end_pos, last_whitespace),
                             size,
                             descriptor,
                             font.unwrap(),
@@ -97,7 +97,7 @@ impl TextRun {
 
         if start_pos != end_pos {
             text_runs.push(TextRun::new(
-                transform_text(content, &mut start_pos, end_pos),
+                transform_text(content, &mut start_pos, end_pos, last_whitespace),
                 size,
                 descriptor,
                 font.unwrap(),
@@ -116,22 +116,31 @@ fn is_specific(script: Script) -> bool {
     script != Script::Common && script != Script::Inherited
 }
 
-// TODO: check whitespace between another node too.
-fn transform_text(content: &str, start_pos: &mut usize, end_pos: usize) -> String {
+fn transform_text(content: &str, start_pos: &mut usize, end_pos: usize, last_whitespace: &mut bool) -> String {
     let mut text = String::new();
     let sliced_content = &content[(*start_pos)..end_pos];
-    let mut is_prev_whitespace = false;
     for ch in sliced_content.chars() {
-        let is_whitespace = ch.is_whitespace();
+        let is_whitespace = is_in_whitespace(ch);
         if !is_whitespace {
             text.push(ch);
         } else {
-            if !is_prev_whitespace {
+            if !*last_whitespace {
                 text.push(' ');
             }
         }
-        is_prev_whitespace = is_whitespace;
+        *last_whitespace = is_whitespace;
     }
     *start_pos = end_pos;
     text
+}
+
+// TODO: check white_space property value
+fn is_in_whitespace(ch: char) -> bool {
+    match ch {
+        ' ' => true,
+        '\t' => true,
+        '\n' => true,
+        '　' => true,
+        _ => false,
+    }
 }

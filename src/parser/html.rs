@@ -14,6 +14,7 @@ impl HTMLParser {
     }
 
     pub fn run(&mut self) -> Node {
+        self.consume_whitespace();
         let mut nodes = self.parse_nodes();
         if nodes.len() == 1 {
             nodes.swap_remove(0)
@@ -25,7 +26,6 @@ impl HTMLParser {
     fn parse_nodes(&mut self) -> Vec<Node> {
         let mut nodes = vec![];
         loop {
-            self.consume_whitespace();
             if self.eof() || self.starts_with("</") {
                 break;
             }
@@ -37,14 +37,15 @@ impl HTMLParser {
     }
 
     fn parse_node(&mut self) -> Option<Node> {
-        match self.next_char() {
-            '<' => self.parse_element(),
-            _ => self.parse_text(),
+        let text = self.consume_while(|c| c != '<');
+        let white_spaces = text.chars().take_while(|c| c.is_whitespace());
+        if text.chars().count() == white_spaces.count() {
+            if self.eof() || self.starts_with("</") {
+                return None;
+            }
+            return self.parse_element();
         }
-    }
-
-    fn parse_text(&mut self) -> Option<Node> {
-        Some(Node::new_text(self.consume_while(|c| c != '<')))
+        Some(Node::new_text(text))
     }
 
     fn parse_element(&mut self) -> Option<Node> {
@@ -192,7 +193,7 @@ mod test {
     fn test_parse_node() {
         let input = "
 <div id=\"main\" class=\"test\">
-  <p>Hello <em>world</em>!</p>
+  <p>Hello <em> world</em>!</p>
   <p>Test</p>
 </div>
 ";
@@ -206,6 +207,7 @@ mod test {
             assert_eq!(&elm.attributes.get("class").unwrap(), &"test");
         }
 
+        println!("{:?}", div.children);
         assert_eq!(div.children.len(), 2);
 
         let p_tag = &div.children[0];
@@ -227,7 +229,7 @@ mod test {
 
         let text_node = &em_tag.children[0];
         if let NodeType::Text(s) = &text_node.node_type {
-            assert_eq!(s, "world");
+            assert_eq!(s, " world");
         }
 
         let text_node = &p_tag.children[2];

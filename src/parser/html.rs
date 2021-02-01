@@ -207,7 +207,6 @@ mod test {
             assert_eq!(&elm.attributes.get("class").unwrap(), &"test");
         }
 
-        println!("{:?}", div.children);
         assert_eq!(div.children.len(), 2);
 
         let p_tag = &div.children[0];

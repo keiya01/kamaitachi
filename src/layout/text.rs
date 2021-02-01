@@ -1,8 +1,155 @@
-use super::font::{create_font_properties, Font, FontCacheKey, FontContext, FontProperties};
+pub use xi_unicode::LineBreakLeafIter;
+
+use super::font::{
+    create_font_properties, Font, FontCacheKey, FontContext, FontProperties, GlyphBrushFont,
+    PxScale, ScaleFont,
+};
+use super::{BoxType, LayoutBox};
 use crate::dom::NodeType;
 use crate::font_list::fallback_font_families;
+use crate::str::char_is_whitespace;
 use crate::style::StyledNode;
+use std::ops::Range;
 use unicode_script::Script;
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum TextFlags {
+    SuppressLineBreakBefore,
+}
+
+#[derive(Debug, Clone)]
+pub struct TextNode<'a> {
+    pub styled_node: &'a StyledNode<'a>,
+    pub range: Range<usize>,
+    pub text_run: TextRun,
+    pub flags: Vec<TextFlags>,
+}
+
+impl<'a> TextNode<'a> {
+    fn new(
+        styled_node: &'a StyledNode<'a>,
+        text_run: TextRun,
+        flags: Vec<TextFlags>,
+    ) -> TextNode<'a> {
+        TextNode {
+            styled_node,
+            range: 0..text_run.glyphs.len(),
+            text_run,
+            flags,
+        }
+    }
+
+    pub fn get_text(&self) -> String {
+        let mut s = String::new();
+        for glyph in &self.text_run.glyphs[self.range.clone()] {
+            s.push_str(&self.text_run.text[glyph.range.clone()]);
+        }
+        s
+    }
+
+    // TODO: stop splitting before inline box(span)
+    // see https://github.com/servo/servo/blob/3f7697690aabd2d8c31bc880fcae21250244219a/components/layout/inline.rs#L857-L897
+    // TODO: support hyphenation
+    pub fn calculate_split_position(
+        &mut self,
+        max_width: f32,
+        remaining_width: f32,
+        font: &Font,
+        font_context: &mut FontContext,
+    ) -> Option<(Option<SplitInfo>, Option<SplitInfo>)> {
+        let mut total_width = 0.0;
+
+        let font_ref = font.as_ref(font_context);
+
+        let glyphs_iter = self.text_run.glyphs[self.range.clone()].iter();
+
+        let mut break_normal_position: Option<usize> = None;
+
+        for (i, glyph) in glyphs_iter.enumerate() {
+            let text = &self.text_run.text[glyph.range.clone()];
+            let scaled_font = font_ref.as_scaled(PxScale::from(font.size));
+            for c in text.chars() {
+                let advanced_width = scaled_font.h_advance(scaled_font.glyph_id(c));
+                total_width += advanced_width;
+                if total_width > remaining_width {
+                    break_normal_position = Some(i);
+                    break;
+                }
+            }
+            if break_normal_position.is_some() {
+                break;
+            }
+        }
+
+        if let Some(idx) = break_normal_position {
+            if idx == 0 {
+                return None;
+            }
+        }
+
+        let break_point = match break_normal_position {
+            Some(pos) => pos + self.range.start,
+            None if total_width > max_width => {
+                return Some((Some(SplitInfo::new(self.range.start..self.range.end)), None))
+            }
+            None => return Some((None, Some(SplitInfo::new(self.range.start..self.range.end)))),
+        };
+
+        let inline_start = SplitInfo::new(self.range.start..break_point);
+        let mut inline_end = None;
+
+        if break_point != self.range.end {
+            inline_end = Some(SplitInfo::new(break_point..self.range.end));
+        }
+
+        Some((Some(inline_start), inline_end))
+    }
+}
+
+#[derive(Clone)]
+pub struct SplitInfo {
+    pub range: Range<usize>,
+}
+
+impl SplitInfo {
+    pub fn new(range: Range<usize>) -> SplitInfo {
+        SplitInfo { range }
+    }
+}
+
+impl Default for SplitInfo {
+    fn default() -> SplitInfo {
+        SplitInfo::new(0..0)
+    }
+}
+
+struct RunInfo {
+    pub text: String,
+    pub font: Font,
+}
+
+#[derive(Debug, Clone)]
+pub struct GlyphStore {
+    pub is_whitespace: bool,
+}
+
+impl GlyphStore {
+    fn new(is_whitespace: bool) -> GlyphStore {
+        GlyphStore { is_whitespace }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct GlyphRun {
+    pub glyph_store: GlyphStore,
+    pub range: Range<usize>,
+}
+
+impl GlyphRun {
+    fn new(glyph_store: GlyphStore, range: Range<usize>) -> GlyphRun {
+        GlyphRun { glyph_store, range }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct TextRun {
@@ -11,21 +158,99 @@ pub struct TextRun {
     pub size: f32,
     pub font: Font,
     pub cache_key: FontCacheKey,
+    pub glyphs: Vec<GlyphRun>,
 }
 
 impl TextRun {
-    pub fn new(text: String, size: f32, descriptor: FontProperties, font: Font) -> TextRun {
-        TextRun {
-            cache_key: FontCacheKey::new(size, descriptor, font.family_name.clone()),
-            text,
-            size,
-            descriptor,
-            font,
+    pub fn new(
+        text: String,
+        size: f32,
+        descriptor: FontProperties,
+        font: Font,
+        breaker: &mut Option<LineBreakLeafIter>,
+    ) -> (TextRun, bool) {
+        let (glyphs, break_at_zero) = TextRun::find_line_break_opportunity(&text, breaker);
+        (
+            TextRun {
+                cache_key: FontCacheKey::new(size, descriptor, font.family_name.clone()),
+                text,
+                size,
+                descriptor,
+                font,
+                glyphs,
+            },
+            break_at_zero,
+        )
+    }
+
+    fn find_line_break_opportunity(
+        text: &str,
+        breaker: &mut Option<LineBreakLeafIter>,
+    ) -> (Vec<GlyphRun>, bool) {
+        let mut glyphs = vec![];
+        let mut slice = 0..0;
+
+        let mut finished = false;
+        let mut break_at_zero = false;
+
+        if breaker.is_none() {
+            if text.len() == 0 {
+                return (glyphs, true);
+            }
+            *breaker = Some(LineBreakLeafIter::new(text, 0));
         }
+
+        let breaker = breaker.as_mut().unwrap();
+
+        while !finished {
+            let (idx, _is_hard_break) = breaker.next(text);
+            if idx == text.len() {
+                finished = true;
+            }
+            if idx == 0 {
+                break_at_zero = true;
+            }
+
+            // Extend the slice to the next UAX#14 line break opportunity.
+            slice.end = idx;
+            let word = &text[slice.clone()];
+
+            // Split off any trailing whitespace into a separate glyph run.
+            let mut whitespace = slice.end..slice.end;
+
+            if let Some((i, _)) = word
+                .char_indices()
+                .rev()
+                .take_while(|&(_, c)| char_is_whitespace(c))
+                .last()
+            {
+                whitespace.start = slice.start + i;
+                slice.end = whitespace.start;
+            } else {
+                // TODO: Support break-word: keep-all;
+            }
+
+            if slice.len() > 0 {
+                glyphs.push(GlyphRun::new(GlyphStore::new(false), slice.clone()));
+            }
+            if whitespace.len() > 0 {
+                glyphs.push(GlyphRun::new(GlyphStore::new(true), whitespace.clone()));
+            }
+
+            slice.start = whitespace.end;
+        }
+
+        (glyphs, break_at_zero)
     }
 
     // TODO: check if character is splittable(Script::Common is not splittable).
-    pub fn scan_for_text(styled_node: &StyledNode, font_context: &mut FontContext, last_whitespace: &mut bool) -> Vec<TextRun> {
+    pub fn scan_for_runs<'a>(
+        layout_box: &mut LayoutBox<'a>,
+        styled_node: &'a StyledNode<'a>,
+        font_context: &mut FontContext,
+        last_whitespace: &mut bool,
+        breaker: &mut Option<LineBreakLeafIter>,
+    ) {
         let content = match &styled_node.node.node_type {
             NodeType::Text(text) => text,
             _ => unreachable!(),
@@ -36,7 +261,7 @@ impl TextRun {
 
         let mut script = Script::Common;
         let mut font: Option<Font> = None;
-        let mut text_runs = vec![];
+        let mut run_info_list = vec![];
 
         let (mut start_pos, mut end_pos) = (0, 0);
         for (_, ch) in content.char_indices() {
@@ -81,12 +306,10 @@ impl TextRun {
 
                 if is_flush {
                     if end_pos > 0 {
-                        text_runs.push(TextRun::new(
-                            transform_text(content, &mut start_pos, end_pos, last_whitespace),
-                            size,
-                            descriptor,
-                            font.unwrap(),
-                        ));
+                        run_info_list.push(RunInfo {
+                            text: transform_text(content, &mut start_pos, end_pos, last_whitespace),
+                            font: font.unwrap(),
+                        });
                     }
                     font = new_font;
                     script = new_script;
@@ -96,15 +319,28 @@ impl TextRun {
         }
 
         if start_pos != end_pos {
-            text_runs.push(TextRun::new(
-                transform_text(content, &mut start_pos, end_pos, last_whitespace),
-                size,
-                descriptor,
-                font.unwrap(),
-            ));
+            run_info_list.push(RunInfo {
+                text: transform_text(content, &mut start_pos, end_pos, last_whitespace),
+                font: font.unwrap(),
+            });
         }
 
-        text_runs
+        for (i, run) in run_info_list.into_iter().enumerate() {
+            let mut flags = vec![];
+            let (text_run, break_at_zero) =
+                TextRun::new(run.text, size, descriptor, run.font, breaker);
+            if !break_at_zero && i == 0 {
+                flags.push(TextFlags::SuppressLineBreakBefore);
+            }
+
+            let child = LayoutBox::new(BoxType::TextNode(TextNode::new(
+                styled_node,
+                text_run,
+                flags,
+            )));
+
+            layout_box.get_inline_container().children.push(child);
+        }
     }
 }
 
@@ -116,7 +352,12 @@ fn is_specific(script: Script) -> bool {
     script != Script::Common && script != Script::Inherited
 }
 
-fn transform_text(content: &str, start_pos: &mut usize, end_pos: usize, last_whitespace: &mut bool) -> String {
+fn transform_text(
+    content: &str,
+    start_pos: &mut usize,
+    end_pos: usize,
+    last_whitespace: &mut bool,
+) -> String {
     let mut text = String::new();
     let sliced_content = &content[(*start_pos)..end_pos];
     for ch in sliced_content.chars() {

@@ -129,8 +129,8 @@ impl<'a> LineBreaker<'a> {
                                         self.work_list.push_front(result);
                                         item.reset_all_edge_right();
                                         self.new_boxes.insert(0, item);
-                                        while let Some(item) = old_boxes.pop() {
-                                            self.new_boxes.insert(0, item);
+                                        while let Some(old_item) = old_boxes.pop() {
+                                            self.new_boxes.insert(0, old_item);
                                         }
                                         break;
                                     },
@@ -182,8 +182,6 @@ impl<'a> LineBreaker<'a> {
                 return None;
             }
             node.range.end = slice.start;
-
-            println!("2..INNER: {}", node.get_text());
             
             if glyph.glyph_store.is_whitespace {
                 slice.start += 1;
@@ -196,7 +194,6 @@ impl<'a> LineBreaker<'a> {
 
             if let BoxType::TextNode(node) = &mut next_layout_box.box_type {
                 node.range = slice;
-                println!("3..INNER: {}", node.get_text());
                 let font = font_context.get_or_create_by(&node.text_run.cache_key);
                 let width = self.text_width(node, &font, font_context);
                 next_layout_box.dimensions.borrow_mut().content.width = width;

@@ -305,7 +305,7 @@ impl TextRun {
                 let is_flush = !has_font || !compatible_script;
 
                 if is_flush {
-                    if end_pos > 0 {
+                    if end_pos > 0 && font.is_some() {
                         run_info_list.push(RunInfo {
                             text: transform_text(content, &mut start_pos, end_pos, last_whitespace),
                             font: font.unwrap(),

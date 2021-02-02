@@ -1,5 +1,5 @@
 use super::font::{with_thread_local_font_context, Font, FontCacheKey, FontContext};
-use super::text::{SplitInfo, TextFlags, TextNode};
+use super::text::{SplitInfo, TextNode};
 use super::{BoxType, Dimensions, LayoutBox, Rect};
 use std::collections::VecDeque;
 use std::iter::Iterator;
@@ -105,7 +105,12 @@ impl<'a> LineBreaker<'a> {
 
             self.pending_line.range.end += 1;
 
-            if self.pending_line.is_line_broken && self.pending_line.is_suppress_line_break_before {
+            let is_text = match layout_box.box_type {
+                BoxType::TextNode(_) => true,
+                _ => false,
+            };
+
+            if !is_text && self.pending_line.is_line_broken && self.pending_line.is_suppress_line_break_before {
                 if let Some(idx) = &self.last_known_line_breaking_opportunity {
                     for _ in (*idx..self.pending_line.range.end - 1).rev() {
                         let item = self.new_boxes.pop().unwrap();
@@ -120,18 +125,17 @@ impl<'a> LineBreaker<'a> {
                             self.new_boxes.push(layout_box.clone());
                         }
                         None => {
-                            let mut old_boxes = mem::replace(&mut self.new_boxes, vec![]);
                             self.pending_line.range.end -= 1;
-                            while let Some(mut item) = old_boxes.pop() {
+                            let mut i = self.new_boxes.len() - 1;
+                            let mut new_boxes = vec![];
+                            while let Some(mut item) = self.new_boxes.pop() {
+                                i -= 1;
                                 match self.split_suppressed_line(&mut item, font_context, &mut None) {
                                     Some(mut result) => {
                                         result.reset_all_edge_left();
                                         self.work_list.push_front(result);
                                         item.reset_all_edge_right();
-                                        self.new_boxes.insert(0, item);
-                                        while let Some(old_item) = old_boxes.pop() {
-                                            self.new_boxes.insert(0, old_item);
-                                        }
+                                        new_boxes.insert(0, item);
                                         break;
                                     },
                                     None => {
@@ -139,7 +143,11 @@ impl<'a> LineBreaker<'a> {
                                         self.pending_line.range.end -= 1;
                                     }
                                 }
+                                if self.pending_line.range.start == i {
+                                    break;
+                                }
                             }
+                            self.new_boxes.append(&mut new_boxes);
                         }
                     }
                 } else {

@@ -47,9 +47,6 @@ impl<'a> TextNode<'a> {
         s
     }
 
-    // TODO: stop splitting before inline box(span)
-    // see https://github.com/servo/servo/blob/3f7697690aabd2d8c31bc880fcae21250244219a/components/layout/inline.rs#L857-L897
-    // TODO: support hyphenation
     pub fn calculate_split_position(
         &mut self,
         max_width: f32,

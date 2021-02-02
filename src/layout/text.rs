@@ -62,30 +62,30 @@ impl<'a> TextNode<'a> {
 
         let mut break_normal_position: Option<usize> = None;
 
+        // No break because it calculate total width
         for (i, glyph) in glyphs_iter.enumerate() {
             let text = &self.text_run.text[glyph.range.clone()];
             let scaled_font = font_ref.as_scaled(PxScale::from(font.size));
             for c in text.chars() {
                 let advanced_width = scaled_font.h_advance(scaled_font.glyph_id(c));
                 total_width += advanced_width;
-                if total_width > remaining_width {
+                if total_width > remaining_width && break_normal_position.is_none() {
                     break_normal_position = Some(i);
-                    break;
                 }
-            }
-            if break_normal_position.is_some() {
-                break;
             }
         }
 
         if let Some(idx) = break_normal_position {
-            if self.text_run.has_start && idx == 0 {
+            if idx == 0 && total_width > max_width {
+                return Some((Some(SplitInfo::new(self.range.start..self.range.end)), None));
+            }
+            if idx == 0 && self.text_run.has_start {
                 return None;
             }
         }
 
         let break_point = match break_normal_position {
-            Some(pos) if pos == 0 => return Some((Some(SplitInfo::new(self.range.start..self.range.end)), None)),
+            Some(pos) if pos == 0 => return Some((None, Some(SplitInfo::new(self.range.start..self.range.end)))),
             Some(pos) => pos + self.range.start,
             None if total_width > max_width => {
                 return Some((Some(SplitInfo::new(self.range.start..self.range.end)), None))

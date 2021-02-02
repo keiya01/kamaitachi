@@ -118,27 +118,27 @@ impl<'a> LineBreaker<'a> {
                     }
 
                     match self.split_suppressed_line(layout_box, font_context, &mut None) {
-                        Some(mut result) => {
+                        (Some(mut result), _) => {
                             result.reset_all_edge_left();
                             self.work_list.push_front(result);
                             layout_box.reset_all_edge_right();
                             self.new_boxes.push(layout_box.clone());
                         }
-                        None => {
+                        (None, _) => {
                             self.pending_line.range.end -= 1;
                             let mut i = self.new_boxes.len() - 1;
                             let mut new_boxes = vec![];
                             while let Some(mut item) = self.new_boxes.pop() {
                                 i -= 1;
                                 match self.split_suppressed_line(&mut item, font_context, &mut None) {
-                                    Some(mut result) => {
+                                    (Some(mut result), _) => {
                                         result.reset_all_edge_left();
                                         self.work_list.push_front(result);
                                         item.reset_all_edge_right();
                                         new_boxes.insert(0, item);
                                         break;
                                     },
-                                    None => {
+                                    (None, _) => {
                                         self.work_list.push_front(item);
                                         self.pending_line.range.end -= 1;
                                     }
@@ -173,9 +173,9 @@ impl<'a> LineBreaker<'a> {
         layout_box: &mut LayoutBox<'a>,
         font_context: &mut FontContext,
         last_result: &mut Option<LayoutBox<'a>>
-    ) -> Option<LayoutBox<'a>> {
+    ) -> (Option<LayoutBox<'a>>, bool) {
         if layout_box.is_hidden {
-            return None;
+            return (None, false);
         }
         if let BoxType::TextNode(node) = &mut layout_box.box_type {
             let mut slice = node.range.clone();
@@ -186,8 +186,8 @@ impl<'a> LineBreaker<'a> {
                 .unwrap();
             slice.start = node.range.start + idx;
 
-            if slice.start == 0 {
-                return None;
+            if node.text_run.has_start && slice.start == 0 {
+                return (None, true);
             }
             node.range.end = slice.start;
             
@@ -206,7 +206,7 @@ impl<'a> LineBreaker<'a> {
                 let width = self.text_width(node, &font, font_context);
                 next_layout_box.dimensions.borrow_mut().content.width = width;
             }
-            return Some(next_layout_box);
+            return (Some(next_layout_box), false);
         }
 
         let mut end_layout_box = layout_box.clone();
@@ -216,7 +216,8 @@ impl<'a> LineBreaker<'a> {
         while let Some(mut child) = old_children.pop() {
             let result = self.split_suppressed_line(&mut child, font_context, last_result);
             match result {
-                Some(result) => {
+                (Some(result), true) => end_layout_box.children.insert(0, result),
+                (Some(result), _) => {
                     let mut d = layout_box.dimensions.borrow_mut();
                     d.content.width =
                         child.dimensions.borrow().content.width;
@@ -228,13 +229,17 @@ impl<'a> LineBreaker<'a> {
                     while let Some(old_child) = old_children.pop() {
                         layout_box.children.insert(0, old_child);
                     }
-                    return Some(end_layout_box);
+                    return (Some(end_layout_box), false);
                 },
-                None => layout_box.children.insert(0, child),
+                (None, true) => {
+                    end_layout_box.children.insert(0, child);
+                    return (Some(end_layout_box), true);
+                },
+                (None, false) => layout_box.children.insert(0, child),
             }
         }
 
-        return None;
+        return (None, false);
     }
 
     fn layout(
@@ -454,6 +459,7 @@ impl<'a> LineBreaker<'a> {
                     _ => unreachable!(),
                 };
                 node.range = inline_end.range.clone();
+                node.text_run.has_start = false;
                 new_layout_box.dimensions.borrow_mut().content.y = 0.;
                 self.work_list.push_front(new_layout_box);
             }

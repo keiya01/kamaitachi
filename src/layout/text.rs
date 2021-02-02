@@ -79,16 +79,17 @@ impl<'a> TextNode<'a> {
         }
 
         if let Some(idx) = break_normal_position {
-            if idx == 0 {
+            if self.text_run.has_start && idx == 0 {
                 return None;
             }
         }
 
         let break_point = match break_normal_position {
+            Some(pos) if pos == 0 => return Some((None, Some(SplitInfo::new(self.range.start..self.range.end)))),
             Some(pos) => pos + self.range.start,
             None if total_width > max_width => {
                 return Some((Some(SplitInfo::new(self.range.start..self.range.end)), None))
-            }
+            },
             None => return Some((None, Some(SplitInfo::new(self.range.start..self.range.end)))),
         };
 
@@ -156,6 +157,7 @@ pub struct TextRun {
     pub font: Font,
     pub cache_key: FontCacheKey,
     pub glyphs: Vec<GlyphRun>,
+    pub has_start: bool,
 }
 
 impl TextRun {
@@ -165,6 +167,7 @@ impl TextRun {
         descriptor: FontProperties,
         font: Font,
         breaker: &mut Option<LineBreakLeafIter>,
+        has_start: bool,
     ) -> (TextRun, bool) {
         let (glyphs, break_at_zero) = TextRun::find_line_break_opportunity(&text, breaker);
         (
@@ -175,6 +178,7 @@ impl TextRun {
                 descriptor,
                 font,
                 glyphs,
+                has_start,
             },
             break_at_zero,
         )
@@ -325,7 +329,7 @@ impl TextRun {
         for (i, run) in run_info_list.into_iter().enumerate() {
             let mut flags = vec![];
             let (text_run, break_at_zero) =
-                TextRun::new(run.text, size, descriptor, run.font, breaker);
+                TextRun::new(run.text, size, descriptor, run.font, breaker, i == 0);
             if !break_at_zero && i == 0 {
                 flags.push(TextFlags::SuppressLineBreakBefore);
             }

@@ -87,13 +87,11 @@ impl<'a> LineBreaker<'a> {
     {
         let item = self.work_list.pop_front();
         match item {
-            Some(mut item) => Some(item),
+            Some(item) => Some(item),
             None => iter_old_boxes.next(),
         }
     }
 
-    // TODO: Stop splitting with before specific character if character is not splittable.
-    // refer https://unicode.org/reports/tr14/
     fn layout_boxes<I>(
         &mut self,
         root: &Dimensions,
@@ -114,16 +112,37 @@ impl<'a> LineBreaker<'a> {
                         self.work_list.push_front(item);
                     }
 
-                    match self.split_suppressed_line(layout_box, font_context) {
+                    match self.split_suppressed_line(layout_box, font_context, &mut None) {
                         Some(mut result) => {
                             result.reset_all_edge_left();
                             self.work_list.push_front(result);
+                            layout_box.reset_all_edge_right();
+                            self.new_boxes.push(layout_box.clone());
                         }
                         None => {
-                            // TODO: retry
+                            let mut old_boxes = mem::replace(&mut self.new_boxes, vec![]);
+                            self.pending_line.range.end -= 1;
+                            while let Some(mut item) = old_boxes.pop() {
+                                match self.split_suppressed_line(&mut item, font_context, &mut None) {
+                                    Some(mut result) => {
+                                        result.reset_all_edge_left();
+                                        self.work_list.push_front(result);
+                                        item.reset_all_edge_right();
+                                        self.new_boxes.insert(0, item);
+                                        while let Some(item) = old_boxes.pop() {
+                                            self.new_boxes.insert(0, item);
+                                        }
+                                        break;
+                                    },
+                                    None => {
+                                        self.work_list.push_front(item);
+                                        self.pending_line.range.end -= 1;
+                                    }
+                                }
+                            }
                         }
                     }
-
+                } else {
                     self.new_boxes.push(layout_box.clone());
                 }
             } else {
@@ -145,7 +164,11 @@ impl<'a> LineBreaker<'a> {
         &self,
         layout_box: &mut LayoutBox<'a>,
         font_context: &mut FontContext,
+        last_result: &mut Option<LayoutBox<'a>>
     ) -> Option<LayoutBox<'a>> {
+        if layout_box.is_hidden {
+            return None;
+        }
         if let BoxType::TextNode(node) = &mut layout_box.box_type {
             let mut slice = node.range.clone();
             let (idx, glyph) = node.text_run.glyphs[node.range.clone()]
@@ -153,15 +176,17 @@ impl<'a> LineBreaker<'a> {
                 .enumerate()
                 .last()
                 .unwrap();
-            slice.start = node.range.start + idx + 1;
+            slice.start = node.range.start + idx;
 
-            if slice.start == 0 && !node.flags.contains(&TextFlags::SuppressLineBreakBefore) {
+            if slice.start == 0 {
                 return None;
             }
             node.range.end = slice.start;
 
+            println!("2..INNER: {}", node.get_text());
+            
             if glyph.glyph_store.is_whitespace {
-                node.range.end -= 1;
+                slice.start += 1;
                 let font = font_context.get_or_create_by(&node.text_run.cache_key);
                 let width = self.text_width(node, &font, font_context);
                 layout_box.dimensions.borrow_mut().content.width = width;
@@ -169,13 +194,13 @@ impl<'a> LineBreaker<'a> {
 
             let mut next_layout_box = layout_box.clone();
 
-            let mut width = 0.;
             if let BoxType::TextNode(node) = &mut next_layout_box.box_type {
                 node.range = slice;
+                println!("3..INNER: {}", node.get_text());
                 let font = font_context.get_or_create_by(&node.text_run.cache_key);
-                width = self.text_width(node, &font, font_context);
+                let width = self.text_width(node, &font, font_context);
+                next_layout_box.dimensions.borrow_mut().content.width = width;
             }
-            layout_box.dimensions.borrow_mut().content.width -= width;
             return Some(next_layout_box);
         }
 
@@ -183,25 +208,24 @@ impl<'a> LineBreaker<'a> {
         end_layout_box.children = vec![];
 
         let mut old_children = mem::replace(&mut layout_box.children, vec![]);
-        old_children.reverse();
         while let Some(mut child) = old_children.pop() {
-            let result = self.split_suppressed_line(&mut child, font_context);
-            let mut next_child = child.clone();
-            next_child.children = vec![];
+            let result = self.split_suppressed_line(&mut child, font_context, last_result);
             match result {
                 Some(result) => {
+                    let mut d = layout_box.dimensions.borrow_mut();
+                    d.content.width =
+                        child.dimensions.borrow().content.width;
                     if let BoxType::TextNode(_) = result.box_type {
-                        layout_box.dimensions.borrow_mut().content.width =
-                            child.dimensions.borrow().content.width;
+                        d.content.width -= result.dimensions.borrow().content.width;
                     }
-                    end_layout_box.children.push(result);
-                    layout_box.children.push(child);
+                    end_layout_box.children.insert(0, result);
+                    layout_box.children.insert(0, child);
                     while let Some(old_child) = old_children.pop() {
-                        end_layout_box.children.push(old_child);
+                        layout_box.children.insert(0, old_child);
                     }
                     return Some(end_layout_box);
-                }
-                None => {}
+                },
+                None => layout_box.children.insert(0, child),
             }
         }
 
@@ -380,9 +404,6 @@ impl<'a> LineBreaker<'a> {
         if text_width >= remaining_width || self.pending_line.is_line_broken {
             self.pending_line.is_line_broken = true;
 
-            let is_suppress_line_break_before =
-                node.flags.contains(&TextFlags::SuppressLineBreakBefore);
-
             let (inline_start, inline_end) = match node.calculate_split_position(
                 self.pending_line.green_zone.width,
                 remaining_width,
@@ -391,7 +412,7 @@ impl<'a> LineBreaker<'a> {
             ) {
                 Some(result) => result,
                 None => {
-                    self.pending_line.is_suppress_line_break_before = is_suppress_line_break_before;
+                    self.pending_line.is_suppress_line_break_before = true;
                     self.work_list.push_front(layout_box.clone());
                     return;
                 }
@@ -405,7 +426,7 @@ impl<'a> LineBreaker<'a> {
                 node.range = inline_start.range.clone();
 
                 // remove whitespace on line end.
-                let last_glyph = &node.text_run.glyphs[node.range.end];
+                let last_glyph = &node.text_run.glyphs[node.range.end - 1];
                 if last_glyph.glyph_store.is_whitespace {
                     node.range.end -= 1;
                 }

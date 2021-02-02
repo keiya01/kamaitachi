@@ -85,7 +85,7 @@ impl<'a> TextNode<'a> {
         }
 
         let break_point = match break_normal_position {
-            Some(pos) if pos == 0 => return Some((None, Some(SplitInfo::new(self.range.start..self.range.end)))),
+            Some(pos) if pos == 0 => return Some((Some(SplitInfo::new(self.range.start..self.range.end)), None)),
             Some(pos) => pos + self.range.start,
             None if total_width > max_width => {
                 return Some((Some(SplitInfo::new(self.range.start..self.range.end)), None))

@@ -75,23 +75,27 @@ impl<'a> TextNode<'a> {
             }
         }
 
-        if let Some(idx) = break_normal_position {
-            if idx == 0 && total_width > max_width {
-                return Some((Some(SplitInfo::new(self.range.start..self.range.end)), None));
-            }
-            if idx == 0 && self.text_run.has_start {
-                return None;
-            }
-        }
-
-        let break_point = match break_normal_position {
-            Some(pos) if pos == 0 => return Some((None, Some(SplitInfo::new(self.range.start..self.range.end)))),
-            Some(pos) => pos + self.range.start,
+        let idx = match break_normal_position {
+            Some(idx) => idx,
             None if total_width > max_width => {
                 return Some((Some(SplitInfo::new(self.range.start..self.range.end)), None))
             },
             None => return Some((None, Some(SplitInfo::new(self.range.start..self.range.end)))),
         };
+
+        if idx == 0 && total_width > max_width {
+            return Some((Some(SplitInfo::new(self.range.start..self.range.end)), None));
+        }
+
+        if idx == 0 && self.text_run.has_start {
+            return None;
+        }
+
+        if idx == 0 {
+            return Some((None, Some(SplitInfo::new(self.range.start..self.range.end))))
+        }
+
+        let break_point = idx + self.range.start;
 
         let inline_start = SplitInfo::new(self.range.start..break_point);
         let mut inline_end = None;

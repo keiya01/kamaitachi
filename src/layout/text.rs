@@ -59,6 +59,7 @@ impl<'a> TextNode<'a> {
         let font_ref = font.as_ref(font_context);
 
         let glyphs_iter = self.text_run.glyphs[self.range.clone()].iter();
+        let glyphs_length = glyphs_iter.len();
 
         let mut break_normal_position: Option<usize> = None;
 
@@ -96,6 +97,22 @@ impl<'a> TextNode<'a> {
         }
 
         let break_point = idx + self.range.start;
+
+        if idx == glyphs_length - 1 {
+            if let Some(glyph) = self.text_run.glyphs.get(break_point) {
+                if glyph.glyph_store.is_whitespace {
+                    return Some((Some(SplitInfo::new(self.range.start..break_point)), None));
+                }
+            }
+        }
+
+        if idx == 1 {
+            if let Some(glyph) = self.text_run.glyphs.get(break_point - 1) {
+                if glyph.glyph_store.is_whitespace {
+                    return Some((None, Some(SplitInfo::new(break_point..self.range.end))));
+                }
+            }
+        }
 
         let inline_start = SplitInfo::new(self.range.start..break_point);
         let mut inline_end = None;

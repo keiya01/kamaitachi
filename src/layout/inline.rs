@@ -154,7 +154,11 @@ impl<'a> LineBreaker<'a> {
                     self.new_boxes.push(layout_box.clone());
                 }
             } else {
-                self.new_boxes.push(layout_box.clone());
+                if !layout_box.is_hidden {
+                    self.new_boxes.push(layout_box.clone());
+                } else {
+                    self.pending_line.range.end -= 1;
+                }
                 self.last_known_line_breaking_opportunity = Some(self.pending_line.range.end);
             }
 
@@ -217,11 +221,13 @@ impl<'a> LineBreaker<'a> {
             let result = self.split_suppressed_line(&mut child, font_context, last_result);
             match result {
                 (Some(result), true) => end_layout_box.children.insert(0, result),
-                (Some(result), _) => {
+                (Some(result), false) => {
                     let mut d = layout_box.dimensions.borrow_mut();
-                    d.content.width =
-                        child.dimensions.borrow().content.width;
                     if let BoxType::TextNode(_) = result.box_type {
+                        // Sync layout_box width with whitespace space width
+                        // d.content.width =
+                        //     child.dimensions.borrow().content.width;
+                        // Remove splitted node width
                         d.content.width -= result.dimensions.borrow().content.width;
                     }
                     end_layout_box.children.insert(0, result);
@@ -459,6 +465,7 @@ impl<'a> LineBreaker<'a> {
                     _ => unreachable!(),
                 };
                 node.range = inline_end.range.clone();
+                // Splitted node should not have start position
                 node.text_run.has_start = false;
                 new_layout_box.dimensions.borrow_mut().content.y = 0.;
                 self.work_list.push_front(new_layout_box);

@@ -74,26 +74,26 @@ impl<'a> TextNode<'a> {
                     break_normal_position = Some(i);
                 }
             }
+            if break_normal_position.is_some() {
+                break;
+            }
         }
 
         let idx = match break_normal_position {
             Some(idx) => idx,
-            None if total_width > max_width => {
-                return Some((Some(SplitInfo::new(self.range.start..self.range.end)), None))
-            },
-            None => return Some((None, Some(SplitInfo::new(self.range.start..self.range.end)))),
+            None => return Some((None, Some(SplitInfo::new(self.range.start..self.range.end, true)))),
         };
 
         if idx == 0 && total_width > max_width {
-            return Some((Some(SplitInfo::new(self.range.start..self.range.end)), None));
+            return Some((Some(SplitInfo::new(self.range.start..self.range.end, true)), None));
         }
 
         if idx == 0 && self.text_run.has_start {
             return None;
         }
-
+        
         if idx == 0 {
-            return Some((None, Some(SplitInfo::new(self.range.start..self.range.end))))
+            return Some((None, Some(SplitInfo::new(self.range.start..self.range.end, false))))
         }
 
         let break_point = idx + self.range.start;
@@ -101,7 +101,7 @@ impl<'a> TextNode<'a> {
         if idx == glyphs_length - 1 {
             if let Some(glyph) = self.text_run.glyphs.get(break_point) {
                 if glyph.glyph_store.is_whitespace {
-                    return Some((Some(SplitInfo::new(self.range.start..break_point)), None));
+                    return Some((Some(SplitInfo::new(self.range.start..break_point, false)), None));
                 }
             }
         }
@@ -109,16 +109,16 @@ impl<'a> TextNode<'a> {
         if idx == 1 {
             if let Some(glyph) = self.text_run.glyphs.get(break_point - 1) {
                 if glyph.glyph_store.is_whitespace {
-                    return Some((None, Some(SplitInfo::new(break_point..self.range.end))));
+                    return Some((None, Some(SplitInfo::new(break_point..self.range.end, false))));
                 }
             }
         }
 
-        let inline_start = SplitInfo::new(self.range.start..break_point);
+        let inline_start = SplitInfo::new(self.range.start..break_point, false);
         let mut inline_end = None;
 
         if break_point != self.range.end {
-            inline_end = Some(SplitInfo::new(break_point..self.range.end));
+            inline_end = Some(SplitInfo::new(break_point..self.range.end, false));
         }
 
         Some((Some(inline_start), inline_end))
@@ -128,17 +128,18 @@ impl<'a> TextNode<'a> {
 #[derive(Clone)]
 pub struct SplitInfo {
     pub range: Range<usize>,
+    pub is_hidden: bool,
 }
 
 impl SplitInfo {
-    pub fn new(range: Range<usize>) -> SplitInfo {
-        SplitInfo { range }
+    pub fn new(range: Range<usize>, is_hidden: bool) -> SplitInfo {
+        SplitInfo { range, is_hidden }
     }
 }
 
 impl Default for SplitInfo {
     fn default() -> SplitInfo {
-        SplitInfo::new(0..0)
+        SplitInfo::new(0..0, false)
     }
 }
 

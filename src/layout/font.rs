@@ -52,12 +52,12 @@ impl PartialEq for FontCacheKey {
         (self.size as i32) == (other.size as i32)
             && (self.properties.stretch.0 as i32) == (other.properties.stretch.0 as i32)
             && (self.properties.weight.0 as i32) == (other.properties.weight.0 as i32)
-            && match (self.properties.style, other.properties.style) {
+            && matches!(
+                (self.properties.style, other.properties.style),
                 (FontStyle::Normal, FontStyle::Normal)
-                | (FontStyle::Italic, FontStyle::Italic)
-                | (FontStyle::Oblique, FontStyle::Oblique) => true,
-                _ => false,
-            }
+                    | (FontStyle::Italic, FontStyle::Italic)
+                    | (FontStyle::Oblique, FontStyle::Oblique)
+            )
             && self.family_name == other.family_name
     }
 }

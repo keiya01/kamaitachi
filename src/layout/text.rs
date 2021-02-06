@@ -234,7 +234,7 @@ impl TextRun {
         let mut break_at_zero = false;
 
         if breaker.is_none() {
-            if text.len() == 0 {
+            if text.is_empty() {
                 return (glyphs, true);
             }
             *breaker = Some(LineBreakLeafIter::new(text, 0));
@@ -270,10 +270,10 @@ impl TextRun {
                 // TODO: Support break-word: keep-all;
             }
 
-            if slice.len() > 0 {
+            if !slice.is_empty() {
                 glyphs.push(GlyphRun::new(GlyphStore::new(false), slice.clone()));
             }
-            if whitespace.len() > 0 {
+            if !whitespace.is_empty() {
                 glyphs.push(GlyphRun::new(GlyphStore::new(true), whitespace.clone()));
             }
 
@@ -344,11 +344,18 @@ impl TextRun {
                 let is_flush = !has_font || !compatible_script;
 
                 if is_flush {
-                    if end_pos > 0 && font.is_some() {
-                        run_info_list.push(RunInfo {
-                            text: transform_text(content, &mut start_pos, end_pos, last_whitespace),
-                            font: font.unwrap(),
-                        });
+                    if end_pos > 0 {
+                        if let Some(font) = font {
+                            run_info_list.push(RunInfo {
+                                text: transform_text(
+                                    content,
+                                    &mut start_pos,
+                                    end_pos,
+                                    last_whitespace,
+                                ),
+                                font,
+                            });
+                        }
                     }
                     font = new_font;
                     script = new_script;
@@ -403,10 +410,8 @@ fn transform_text(
         let is_whitespace = is_in_whitespace(ch);
         if !is_whitespace {
             text.push(ch);
-        } else {
-            if !*last_whitespace {
-                text.push(' ');
-            }
+        } else if !*last_whitespace {
+            text.push(' ');
         }
         *last_whitespace = is_whitespace;
     }

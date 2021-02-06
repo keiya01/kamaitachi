@@ -123,7 +123,7 @@ fn render_text(list: &mut DisplayList, layout_box: &LayoutBox, font_context: &mu
 
     let font = font_context.get_or_create_by(&node.text_run.cache_key);
     list.push(DisplayCommand::Text(
-        text.into(),
+        text,
         color,
         layout_box.dimensions.borrow().content.clone(),
         font,

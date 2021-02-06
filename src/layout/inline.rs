@@ -105,10 +105,7 @@ impl<'a> LineBreaker<'a> {
 
             self.pending_line.range.end += 1;
 
-            let is_text = match layout_box.box_type {
-                BoxType::TextNode(_) => true,
-                _ => false,
-            };
+            let is_text = matches!(layout_box.box_type, BoxType::TextNode(_));
 
             if !is_text
                 && self.pending_line.is_line_broken
@@ -253,7 +250,7 @@ impl<'a> LineBreaker<'a> {
                     end_layout_box.children.push(result);
                     layout_box.children.push(child);
 
-                    let is_first_line = self.lines.len() == 0;
+                    let is_first_line = self.lines.is_empty();
                     if !is_first_line {
                         while let Some(old_child) = old_children.pop() {
                             end_layout_box.children.push(old_child);
@@ -270,10 +267,10 @@ impl<'a> LineBreaker<'a> {
             }
         }
 
-        if end_layout_box.children.len() == 0 {
-            return (Some(end_layout_box), true);
+        if end_layout_box.children.is_empty() {
+            (Some(end_layout_box), true)
         } else {
-            return (None, true);
+            (None, true)
         }
     }
 

@@ -227,32 +227,33 @@ impl<'a> LineBreaker<'a> {
         end_layout_box.children = vec![];
 
         let mut old_children = mem::replace(&mut layout_box.children, vec![]);
+        old_children.reverse();
         while let Some(mut child) = old_children.pop() {
             let result = self.split_suppressed_line(&mut child, font_context);
             match result {
-                (Some(result), true) => end_layout_box.children.insert(0, result),
+                (Some(result), true) => end_layout_box.children.push(result),
                 (Some(result), false) => {
                     let mut d = layout_box.dimensions.borrow_mut();
                     // Sync inline box with layout_box width
+                    d.content.width = child.dimensions.borrow().content.width;
                     if let BoxType::TextNode(_) = result.box_type {
-                        d.content.width = child.dimensions.borrow().content.width;
                         // Remove splitted node width
                         d.content.width -= result.dimensions.borrow().content.width;
-                    } else {
-                        d.content.width = child.dimensions.borrow().content.width;
                     }
-                    end_layout_box.children.insert(0, result);
-                    layout_box.children.insert(0, child);
-                    while let Some(old_child) = old_children.pop() {
-                        layout_box.children.insert(0, old_child);
+                    end_layout_box.children.push(result);
+                    layout_box.children.push(child);
+                    if self.lines.len() != 0 {
+                        while let Some(old_child) = old_children.pop() {
+                            end_layout_box.children.push(old_child);
+                        }
                     }
                     return (Some(end_layout_box), false);
                 },
                 (None, true) => {
-                    end_layout_box.children.insert(0, child);
+                    end_layout_box.children.push(child);
                     return (Some(end_layout_box), true);
                 },
-                (None, false) => layout_box.children.insert(0, child),
+                (None, false) => layout_box.children.push(child),
             }
         }
 

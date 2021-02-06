@@ -191,7 +191,7 @@ impl TextRun {
         breaker: &mut Option<LineBreakLeafIter>,
         has_start: bool,
     ) -> (TextRun, bool) {
-        let (glyphs, break_at_zero) = TextRun::find_line_break_opportunity(&text, breaker);
+        let (glyphs, break_at_zero) = TextRun::split_with_line_break_opportunity(&text, breaker);
         (
             TextRun {
                 cache_key: FontCacheKey::new(size, descriptor, font.family_name.clone()),
@@ -206,7 +206,7 @@ impl TextRun {
         )
     }
 
-    fn find_line_break_opportunity(
+    fn split_with_line_break_opportunity(
         text: &str,
         breaker: &mut Option<LineBreakLeafIter>,
     ) -> (Vec<GlyphRun>, bool) {
@@ -266,7 +266,6 @@ impl TextRun {
         (glyphs, break_at_zero)
     }
 
-    // TODO: check if character is splittable(Script::Common is not splittable).
     pub fn scan_for_runs<'a>(
         layout_box: &mut LayoutBox<'a>,
         styled_node: &'a StyledNode<'a>,

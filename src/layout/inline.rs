@@ -110,7 +110,10 @@ impl<'a> LineBreaker<'a> {
                 _ => false,
             };
 
-            if !is_text && self.pending_line.is_line_broken && self.pending_line.is_suppress_line_break_before {
+            if !is_text
+                && self.pending_line.is_line_broken
+                && self.pending_line.is_suppress_line_break_before
+            {
                 if let Some(idx) = &self.last_known_line_breaking_opportunity {
                     for _ in (*idx..self.pending_line.range.end - 1).rev() {
                         let item = self.new_boxes.pop().unwrap();
@@ -140,14 +143,18 @@ impl<'a> LineBreaker<'a> {
         }
     }
 
-    fn recursive_split_suppress_line(&mut self, layout_box: &mut LayoutBox<'a>, font_context: &mut FontContext) {
+    fn recursive_split_suppress_line(
+        &mut self,
+        layout_box: &mut LayoutBox<'a>,
+        font_context: &mut FontContext,
+    ) {
         match self.split_suppressed_line(layout_box, font_context) {
             (Some(mut result), false) => {
                 result.reset_all_edge_left();
                 self.work_list.push_front(result);
                 layout_box.reset_all_edge_right();
                 self.new_boxes.push(layout_box.clone());
-            },
+            }
             // If splitting position is inline box, search splittable position recursively.
             (Some(result), true) => {
                 self.work_list.push_front(result);
@@ -155,7 +162,7 @@ impl<'a> LineBreaker<'a> {
                 if let Some(mut layout_box) = self.new_boxes.pop() {
                     self.recursive_split_suppress_line(&mut layout_box, font_context);
                 }
-            },
+            }
             // If splitting position is not found, search splittable position from new_boxes.
             (None, _) => {
                 self.pending_line.range.end -= 1;
@@ -170,7 +177,7 @@ impl<'a> LineBreaker<'a> {
                             item.reset_all_edge_right();
                             new_boxes.insert(0, item);
                             break;
-                        },
+                        }
                         (None, _) => {
                             self.work_list.push_front(item);
                             self.pending_line.range.end -= 1;
@@ -207,7 +214,7 @@ impl<'a> LineBreaker<'a> {
                 return (None, true);
             }
             node.range.end = slice.start;
-            
+
             if glyph.glyph_store.is_whitespace {
                 slice.start += 1;
                 let font = font_context.get_or_create_by(&node.text_run.cache_key);
@@ -254,11 +261,11 @@ impl<'a> LineBreaker<'a> {
                     }
 
                     return (Some(end_layout_box), false);
-                },
+                }
                 (None, true) => {
                     end_layout_box.children.push(child);
                     return (Some(end_layout_box), true);
-                },
+                }
                 (None, false) => layout_box.children.push(child),
             }
         }

@@ -81,19 +81,30 @@ impl<'a> TextNode<'a> {
 
         let idx = match break_normal_position {
             Some(idx) => idx,
-            None => return Some((None, Some(SplitInfo::new(self.range.start..self.range.end, true)))),
+            None => {
+                return Some((
+                    None,
+                    Some(SplitInfo::new(self.range.start..self.range.end, true)),
+                ))
+            }
         };
 
         if idx == 0 && total_width > max_width {
-            return Some((Some(SplitInfo::new(self.range.start..self.range.end, true)), None));
+            return Some((
+                Some(SplitInfo::new(self.range.start..self.range.end, true)),
+                None,
+            ));
         }
 
         if idx == 0 && self.text_run.has_start {
             return None;
         }
-        
+
         if idx == 0 {
-            return Some((None, Some(SplitInfo::new(self.range.start..self.range.end, false))))
+            return Some((
+                None,
+                Some(SplitInfo::new(self.range.start..self.range.end, false)),
+            ));
         }
 
         let break_point = idx + self.range.start;
@@ -101,7 +112,10 @@ impl<'a> TextNode<'a> {
         if idx == glyphs_length - 1 {
             if let Some(glyph) = self.text_run.glyphs.get(break_point) {
                 if glyph.glyph_store.is_whitespace {
-                    return Some((Some(SplitInfo::new(self.range.start..break_point, false)), None));
+                    return Some((
+                        Some(SplitInfo::new(self.range.start..break_point, false)),
+                        None,
+                    ));
                 }
             }
         }
@@ -109,7 +123,10 @@ impl<'a> TextNode<'a> {
         if idx == 1 {
             if let Some(glyph) = self.text_run.glyphs.get(break_point - 1) {
                 if glyph.glyph_store.is_whitespace {
-                    return Some((None, Some(SplitInfo::new(break_point..self.range.end, false))));
+                    return Some((
+                        None,
+                        Some(SplitInfo::new(break_point..self.range.end, false)),
+                    ));
                 }
             }
         }

@@ -148,6 +148,7 @@ impl<'a> LineBreaker<'a> {
                 layout_box.reset_all_edge_right();
                 self.new_boxes.push(layout_box.clone());
             },
+            // If splitting position is inline box, search splittable position recursively.
             (Some(result), true) => {
                 self.work_list.push_front(result);
                 self.pending_line.range.end -= 1;
@@ -155,6 +156,7 @@ impl<'a> LineBreaker<'a> {
                     self.recursive_split_suppress_line(&mut layout_box, font_context);
                 }
             },
+            // If splitting position is not found, search splittable position from new_boxes.
             (None, _) => {
                 self.pending_line.range.end -= 1;
                 let mut i = self.new_boxes.len() - 1;
@@ -200,7 +202,8 @@ impl<'a> LineBreaker<'a> {
                 .unwrap();
             slice.start = node.range.start + idx;
 
-            if node.text_run.has_start && slice.start == 0 {
+            let is_inline_box = node.text_run.has_start && slice.start == 0;
+            if is_inline_box {
                 return (None, true);
             }
             node.range.end = slice.start;
@@ -242,11 +245,14 @@ impl<'a> LineBreaker<'a> {
                     }
                     end_layout_box.children.push(result);
                     layout_box.children.push(child);
-                    if self.lines.len() != 0 {
+
+                    let is_first_line = self.lines.len() == 0;
+                    if !is_first_line {
                         while let Some(old_child) = old_children.pop() {
                             end_layout_box.children.push(old_child);
                         }
                     }
+
                     return (Some(end_layout_box), false);
                 },
                 (None, true) => {
@@ -523,7 +529,6 @@ impl<'a> LineBreaker<'a> {
 
     fn text_width(&self, node: &TextNode<'a>, font: &Font, font_context: &mut FontContext) -> f32 {
         let text = node.get_text();
-        // TODO: optimize to load font only once
         font.width(&text, font_context)
     }
 

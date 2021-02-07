@@ -1,25 +1,10 @@
 use super::font::{with_thread_local_font_context, Font, FontCacheKey, FontContext};
-use super::text::{SplitInfo, TextNode};
+use super::text::{TextNode};
 use super::{BoxType, Dimensions, LayoutBox, Rect};
 use std::collections::VecDeque;
 use std::iter::Iterator;
 use std::mem;
 use std::ops::Range;
-
-#[derive(Clone)]
-struct LineState {
-    inline_start: Option<SplitInfo>,
-    inline_end: Option<SplitInfo>,
-}
-
-impl LineState {
-    fn new() -> LineState {
-        LineState {
-            inline_start: None,
-            inline_end: None,
-        }
-    }
-}
 
 #[derive(Clone)]
 struct Line {
@@ -28,7 +13,6 @@ struct Line {
     green_zone: Rect,
     metrics: LineMetrics,
     is_line_broken: bool,
-    line_state: LineState,
     is_suppress_line_break_before: bool,
 }
 
@@ -40,7 +24,6 @@ impl Line {
             green_zone: Default::default(),
             metrics: LineMetrics::new(),
             is_line_broken: false,
-            line_state: LineState::new(),
             is_suppress_line_break_before: false,
         }
     }
@@ -163,17 +146,21 @@ impl<'a> LineBreaker<'a> {
             // If splitting position is not found, search splittable position from new_boxes.
             (None, _) => {
                 self.pending_line.range.end -= 1;
-                let mut i = self.new_boxes.len() - 1;
+                let mut i = self.new_boxes.len();
                 let mut new_boxes = vec![];
                 while let Some(mut item) = self.new_boxes.pop() {
                     i -= 1;
                     match self.split_suppressed_line(&mut item, font_context) {
-                        (Some(mut result), _) => {
+                        (Some(mut result), false) => {
                             result.reset_all_edge_left();
                             self.work_list.push_front(result);
                             item.reset_all_edge_right();
                             new_boxes.insert(0, item);
                             break;
+                        }
+                        (Some(result), true) => {
+                            self.work_list.push_front(result);
+                            self.pending_line.range.end -= 1;
                         }
                         (None, _) => {
                             self.work_list.push_front(item);
@@ -184,7 +171,12 @@ impl<'a> LineBreaker<'a> {
                         break;
                     }
                 }
-                self.new_boxes.append(&mut new_boxes);
+                if self.new_boxes.len() == 0 {
+                    // TODO: Support the case of all layout_box are line box
+                    unimplemented!("Not supported if all layout_box are line box");
+                } else {
+                    self.new_boxes.append(&mut new_boxes);
+                }
             }
         }
     }
@@ -238,7 +230,12 @@ impl<'a> LineBreaker<'a> {
         while let Some(mut child) = old_children.pop() {
             let result = self.split_suppressed_line(&mut child, font_context);
             match result {
-                (Some(result), true) => end_layout_box.children.push(result),
+                (Some(result), true) => {
+                    if child.is_hidden {
+                        layout_box.is_hidden = true;
+                    }
+                    end_layout_box.children.push(result);
+                }
                 (Some(result), false) => {
                     let mut d = layout_box.dimensions.borrow_mut();
                     // Sync inline box with layout_box width
@@ -260,14 +257,15 @@ impl<'a> LineBreaker<'a> {
                     return (Some(end_layout_box), false);
                 }
                 (None, true) => {
+                    layout_box.is_hidden = true;
                     end_layout_box.children.push(child);
                     return (Some(end_layout_box), true);
                 }
-                (None, false) => layout_box.children.push(child),
+                (None, false) => end_layout_box.children.push(child),
             }
         }
 
-        if end_layout_box.children.is_empty() {
+        if !end_layout_box.children.is_empty() {
             (Some(end_layout_box), true)
         } else {
             (None, true)
@@ -327,11 +325,12 @@ impl<'a> LineBreaker<'a> {
         font_context: &mut FontContext,
     ) {
         let mut total_width = 0.;
-        let mut new_children = vec![];
+        let mut new_children: Vec<LayoutBox> = vec![];
         let mut broken_line_children = vec![];
         let mut end_layout_box: LayoutBox<'a> = layout_box.clone();
 
-        for child in &mut layout_box.children {
+        for (i, child) in layout_box.children.iter_mut().enumerate() {
+            let is_first_line_box = i == 0;
             if self.pending_line.is_line_broken {
                 broken_line_children.push(child.clone());
                 continue;
@@ -344,15 +343,19 @@ impl<'a> LineBreaker<'a> {
                 if let Some(item) = self.work_list.pop_front() {
                     broken_line_children.push(item);
                 }
-                if let BoxType::TextNode(_) = child.box_type {
-                    if self.pending_line.is_line_broken && child.is_hidden {
-                        // Remove splitted inline start node
-                        layout_box.is_hidden = true;
-                    }
+            }
+
+            if let BoxType::TextNode(_) = child.box_type {
+                if child.is_hidden {
+                    // Remove splitted inline start node
+                    layout_box.is_hidden = true;
                 }
             }
 
             if child.is_hidden {
+                if is_first_line_box {
+                    layout_box.is_hidden = true;
+                }
                 continue;
             }
 
@@ -469,10 +472,14 @@ impl<'a> LineBreaker<'a> {
                 };
                 node.range = inline_start.range.clone();
 
-                // remove whitespace on line end.
-                let last_glyph = &node.text_run.glyphs[node.range.end - 1];
-                if last_glyph.glyph_store.is_whitespace {
-                    node.range.end -= 1;
+                if node.range.end != 0 {
+                    // remove whitespace on line end.
+                    let last_glyph = &node.text_run.glyphs[node.range.end - 1];
+                    if last_glyph.glyph_store.is_whitespace {
+                        node.range.end -= 1;
+                    }
+                } else {
+                    layout_box.is_hidden = true;
                 }
 
                 let text_width = self.text_width(node, &font, font_context);
@@ -499,9 +506,6 @@ impl<'a> LineBreaker<'a> {
                 new_layout_box.dimensions.borrow_mut().content.y = 0.;
                 self.work_list.push_front(new_layout_box);
             }
-
-            self.pending_line.line_state.inline_start = inline_start;
-            self.pending_line.line_state.inline_end = inline_end;
         } else {
             let metrics = self
                 .pending_line

@@ -96,15 +96,8 @@ impl<'a> TextNode<'a> {
             ));
         }
 
-        if idx == 0 && self.text_run.has_start {
+        if idx == 0 && self.text_run.has_start && self.flags.contains(&TextFlags::SuppressLineBreakBefore) {
             return None;
-        }
-
-        if idx == 0 {
-            return Some((
-                None,
-                Some(SplitInfo::new(self.range.start..self.range.end, false)),
-            ));
         }
 
         let break_point = idx + self.range.start;
@@ -120,15 +113,22 @@ impl<'a> TextNode<'a> {
             }
         }
 
-        if idx == 1 {
-            if let Some(glyph) = self.text_run.glyphs.get(break_point - 1) {
+        if idx == 0 {
+            if let Some(glyph) = self.text_run.glyphs.get(break_point) {
                 if glyph.glyph_store.is_whitespace {
                     return Some((
                         None,
-                        Some(SplitInfo::new(break_point..self.range.end, false)),
+                        Some(SplitInfo::new(break_point + 1..self.range.end, true)),
                     ));
                 }
             }
+        }
+
+        if idx == 0 && self.text_run.has_start {
+            return Some((
+                None,
+                Some(SplitInfo::new(self.range.start..self.range.end, true)),
+            ));
         }
 
         let inline_start = SplitInfo::new(self.range.start..break_point, false);

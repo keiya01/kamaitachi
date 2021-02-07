@@ -345,6 +345,10 @@ impl<'a> LineBreaker<'a> {
                 }
             }
 
+            // TODO: Remove whitespace when splitted text node is CJK.
+            // |------| <= available width
+            // <span>" " <= line 1. This should be removed.
+            // "日本語"</span> <= line 2.
             if let BoxType::TextNode(_) = child.box_type {
                 if child.is_hidden {
                     // Remove splitted inline start node

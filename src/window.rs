@@ -1,4 +1,4 @@
-use iced::{Element, Sandbox, Settings, Scrollable, scrollable, Length};
+use iced::{scrollable, Element, Length, Sandbox, Scrollable, Settings};
 
 use std::cell::RefCell;
 use std::io::prelude::*;
@@ -31,7 +31,12 @@ impl<'a> Sandbox for Window {
 
     fn new() -> Self {
         let (items, height, width) = prepare();
-        Window { items, height, width, scroll: scrollable::State::new() }
+        Window {
+            items,
+            height,
+            width,
+            scroll: scrollable::State::new(),
+        }
     }
 
     fn title(&self) -> String {
@@ -63,10 +68,10 @@ impl<'a> Sandbox for Window {
         });
 
         Scrollable::new(&mut self.scroll)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .push(wrapper)
-        .into()
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .push(wrapper)
+            .into()
     }
 }
 

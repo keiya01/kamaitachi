@@ -13,8 +13,8 @@ use font_kit::font;
 use font_kit::source::SystemSource;
 use glyph_brush::ab_glyph::FontRef;
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
 pub fn create_font_properties(styled_node: &StyledNode) -> FontProperties {
@@ -36,7 +36,7 @@ pub struct FontCacheKey {
 impl Hash for FontCacheKey {
     fn hash<H: Hasher>(&self, state: &mut H) {
         (self.size as i32).hash(state);
-        match self.properties.style  {
+        match self.properties.style {
             FontStyle::Normal => "normal".hash(state),
             FontStyle::Italic => "italic".hash(state),
             FontStyle::Oblique => "oblique".hash(state),
@@ -52,12 +52,12 @@ impl PartialEq for FontCacheKey {
         (self.size as i32) == (other.size as i32)
             && (self.properties.stretch.0 as i32) == (other.properties.stretch.0 as i32)
             && (self.properties.weight.0 as i32) == (other.properties.weight.0 as i32)
-            && match (self.properties.style, other.properties.style) {
+            && matches!(
+                (self.properties.style, other.properties.style),
                 (FontStyle::Normal, FontStyle::Normal)
-                | (FontStyle::Italic, FontStyle::Italic)
-                | (FontStyle::Oblique, FontStyle::Oblique) => true,
-                _ => false
-            }
+                    | (FontStyle::Italic, FontStyle::Italic)
+                    | (FontStyle::Oblique, FontStyle::Oblique)
+            )
             && self.family_name == other.family_name
     }
 }

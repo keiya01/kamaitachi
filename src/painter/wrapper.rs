@@ -8,7 +8,10 @@ pub struct Wrapper {
 
 impl Wrapper {
     pub fn new(height: f32, width: f32) -> Wrapper {
-        Wrapper { items: vec![], size: Size::new(width, height) }
+        Wrapper {
+            items: vec![],
+            size: Size::new(width, height),
+        }
     }
 }
 
@@ -25,7 +28,7 @@ where
     fn width(&self) -> Length {
         Length::Units(self.size.width as u16)
     }
-    
+
     fn height(&self) -> Length {
         Length::Units(self.size.height as u16)
     }

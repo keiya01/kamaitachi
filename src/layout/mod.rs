@@ -5,13 +5,12 @@ pub mod text;
 use crate::cssom::{Unit, Value};
 use crate::dom::NodeType;
 use crate::style::*;
-use font::{with_thread_local_font_context, Font, FontContext, GlyphBrushFont, PxScale, ScaleFont};
+use font::{with_thread_local_font_context, FontContext};
 use inline::InlineBox;
 use std::cell::RefCell;
 use std::mem;
-use std::ops::Range;
 use std::rc::Rc;
-use text::TextRun;
+use text::{LineBreakLeafIter, TextNode, TextRun};
 
 // CSS box model. All sizes are in px.
 
@@ -390,23 +389,40 @@ impl<'a> LayoutBox<'a> {
         d.padding.right = node.lookup("padding-right", "padding", &zero).to_px();
     }
 
-    fn reset_splitted_edge_left(&mut self) {
+    fn reset_all_edge_left(&mut self) -> f32 {
         if self.is_splitted {
-            return;
+            return 0.;
         }
         self.is_splitted = true;
-        self.dimensions.borrow_mut().reset_edge_left();
-        if !self.children.is_empty() {
-            self.children[0].reset_splitted_edge_left();
-        }
-    }
+        let mut d = self.dimensions.borrow_mut();
+        let left = d.margin_left_offset();
 
-    fn reset_all_edge_right(&mut self) {
-        self.dimensions.borrow_mut().reset_edge_right();
+        d.content.width -= d.padding.left;
+
+        d.reset_edge_left();
+
         let len = self.children.len();
         if len != 0 {
-            self.children[len - 1].reset_all_edge_right();
+            let left = self.children[0].reset_all_edge_left();
+            d.content.width -= left;
         }
+        left
+    }
+
+    fn reset_all_edge_right(&mut self) -> f32 {
+        let mut d = self.dimensions.borrow_mut();
+        let right = d.margin_right_offset();
+
+        d.content.width -= d.padding.right;
+
+        d.reset_edge_right();
+
+        let len = self.children.len();
+        if len != 0 {
+            let right = self.children[len - 1].reset_all_edge_right();
+            d.content.width -= right;
+        }
+        right
     }
 }
 
@@ -418,137 +434,6 @@ pub enum BoxType<'a> {
     AnonymousBlock,
 }
 
-#[derive(Debug, Clone)]
-pub struct TextNode<'a> {
-    pub styled_node: &'a StyledNode<'a>,
-    pub range: Range<usize>,
-    pub text_run: TextRun,
-}
-
-impl<'a> TextNode<'a> {
-    fn new(styled_node: &'a StyledNode<'a>, text_run: TextRun) -> TextNode<'a> {
-        TextNode {
-            styled_node,
-            range: 0..text_run.text.len(),
-            text_run,
-        }
-    }
-
-    pub fn get_text(&self) -> &str {
-        &self.text_run.text[self.range.clone()]
-    }
-
-    // TODO: stop splitting before inline box(span)
-    // see https://github.com/servo/servo/blob/3f7697690aabd2d8c31bc880fcae21250244219a/components/layout/inline.rs#L857-L897
-    // TODO: support hyphenation
-    fn calculate_split_position(
-        &self,
-        text_node: &TextNode,
-        max_width: f32,
-        remaining_width: f32,
-        font: &Font,
-        font_context: &mut FontContext,
-    ) -> (Option<SplitInfo>, Option<SplitInfo>) {
-        let text = text_node.get_text();
-
-        let mut total_width = 0.0;
-        let mut start_position: Option<usize> = None;
-
-        let mut break_normal_position: Option<usize> = None;
-        let mut break_all_position: Option<usize> = None;
-
-        let is_break_all = if let WordBreak::BreakAll = text_node.styled_node.word_break() {
-            true
-        } else {
-            false
-        };
-
-        let font_ref = font.as_ref(font_context);
-        let scaled_font = font_ref.as_scaled(PxScale::from(font.size));
-        for (i, c) in text.char_indices() {
-            if start_position.is_none() {
-                start_position = Some(c.len_utf8());
-            }
-            let advanced_width = scaled_font.h_advance(scaled_font.glyph_id(c));
-            total_width += advanced_width;
-            if total_width < remaining_width {
-                if is_break_all {
-                    if c.is_whitespace() {
-                        break_normal_position = Some(i);
-                        continue;
-                    }
-                    if break_normal_position.is_some() {
-                        break_all_position = break_normal_position;
-                        break_normal_position = None;
-                    } else {
-                        break_all_position = Some(i);
-                    }
-                } else {
-                    if c.is_whitespace() {
-                        break_normal_position = Some(i);
-                    }
-                }
-            }
-        }
-
-        let break_point = if is_break_all {
-            if break_normal_position.is_some() {
-                break_normal_position
-            } else {
-                break_all_position
-            }
-        } else {
-            break_normal_position
-        };
-
-        let break_point = match break_point {
-            Some(pos) => pos + text_node.range.start + start_position.unwrap(),
-            None if total_width > max_width => {
-                return (
-                    Some(SplitInfo::new(text_node.range.start..text_node.range.end)),
-                    None,
-                )
-            }
-            None => {
-                return (
-                    None,
-                    Some(SplitInfo::new(text_node.range.start..text_node.range.end)),
-                )
-            }
-        };
-
-        let inline_start = SplitInfo::new(text_node.range.start..break_point);
-        let mut inline_end = None;
-
-        if break_point != text_node.range.end {
-            inline_end = Some(SplitInfo::new(break_point..text_node.range.end));
-        }
-
-        (Some(inline_start), inline_end)
-    }
-}
-
-#[derive(Clone)]
-pub struct SplitInfo {
-    range: Range<usize>,
-    overflowing: bool,
-}
-
-impl SplitInfo {
-    pub fn new(range: Range<usize>) -> SplitInfo {
-        SplitInfo {
-            range,
-            overflowing: false,
-        }
-    }
-}
-
-impl Default for SplitInfo {
-    fn default() -> SplitInfo {
-        SplitInfo::new(0..0)
-    }
-}
-
 pub fn layout_tree<'a>(
     node: &'a StyledNode<'a>,
     containing_block: Rc<RefCell<Dimensions>>,
@@ -558,7 +443,8 @@ pub fn layout_tree<'a>(
     containing_block.borrow_mut().content.height = 0.0;
 
     let mut root_box = with_thread_local_font_context(|font_context| {
-        build_layout_tree(node, None, font_context).unwrap()
+        let mut last_whitespace = false;
+        build_layout_tree(node, None, font_context, &mut last_whitespace, &mut None).unwrap()
     });
     root_box.layout(containing_block);
     root_box
@@ -568,44 +454,69 @@ pub fn build_layout_tree<'a>(
     style_node: &'a StyledNode<'a>,
     container: Option<&mut LayoutBox<'a>>,
     font_context: &mut FontContext,
+    last_whitespace: &mut bool,
+    breaker: &mut Option<LineBreakLeafIter>,
 ) -> Option<LayoutBox<'a>> {
-    let box_type = match style_node.display() {
-        Display::Block => BoxType::BlockNode(style_node),
-        Display::Inline => match &style_node.node.node_type {
-            NodeType::Element(_) => BoxType::InlineNode(style_node),
-            NodeType::Text(_) => {
-                let layout_box = match container {
-                    Some(layout_box) => layout_box,
-                    None => unreachable!(),
-                };
-                let text_runs = TextRun::scan_for_text(style_node, font_context);
-
-                for run in text_runs.into_iter() {
-                    let child = LayoutBox::new(BoxType::TextNode(TextNode::new(style_node, run)));
-                    layout_box.get_inline_container().children.push(child);
-                }
-
-                return None;
+    let mut root = {
+        let box_type = match style_node.display() {
+            Display::Block => {
+                *last_whitespace = false;
+                // Reset breaker because BlockNode make new line
+                *breaker = None;
+                BoxType::BlockNode(style_node)
             }
-        },
-        Display::None => panic!("Root node must has `display: none;`."),
+            Display::Inline => match &style_node.node.node_type {
+                NodeType::Element(_) => BoxType::InlineNode(style_node),
+                NodeType::Text(_) => {
+                    let layout_box = match container {
+                        Some(layout_box) => layout_box,
+                        None => unreachable!(),
+                    };
+
+                    TextRun::scan_for_runs(
+                        layout_box,
+                        style_node,
+                        font_context,
+                        last_whitespace,
+                        breaker,
+                    );
+
+                    return None;
+                }
+            },
+            Display::None => panic!("Root node must has `display: none;`."),
+        };
+
+        LayoutBox::new(box_type)
     };
 
-    let mut root = LayoutBox::new(box_type);
-
-    for child in &style_node.children {
-        match child.display() {
-            Display::Block => {
-                if let Some(layout_box) = build_layout_tree(child, Some(&mut root), font_context) {
-                    root.children.push(layout_box);
+    {
+        for child in &style_node.children {
+            match child.display() {
+                Display::Block => {
+                    if let Some(layout_box) = build_layout_tree(
+                        child,
+                        Some(&mut root),
+                        font_context,
+                        last_whitespace,
+                        breaker,
+                    ) {
+                        root.children.push(layout_box);
+                    }
                 }
-            }
-            Display::Inline => {
-                if let Some(layout_box) = build_layout_tree(child, Some(&mut root), font_context) {
-                    root.get_inline_container().children.push(layout_box);
+                Display::Inline => {
+                    if let Some(layout_box) = build_layout_tree(
+                        child,
+                        Some(&mut root),
+                        font_context,
+                        last_whitespace,
+                        breaker,
+                    ) {
+                        root.get_inline_container().children.push(layout_box);
+                    }
                 }
+                Display::None => {}
             }
-            Display::None => {}
         }
     }
 

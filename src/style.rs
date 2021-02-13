@@ -53,11 +53,7 @@ pub enum WordBreak {
 
 impl WordBreak {
     pub fn is_break_all(&self) -> bool {
-        if let WordBreak::BreakAll = self {
-            true
-        } else {
-            false
-        }
+        matches!(self, WordBreak::BreakAll)
     }
 }
 

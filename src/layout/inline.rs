@@ -88,10 +88,7 @@ impl<'a> LineBreaker<'a> {
 
             self.pending_line.range.end += 1;
 
-            let is_text = matches!(layout_box.box_type, BoxType::TextNode(_));
-
-            if !is_text
-                && self.pending_line.is_line_broken
+            if self.pending_line.is_line_broken
                 && self.pending_line.is_suppress_line_break_before
             {
                 if let Some(idx) = &self.last_known_line_breaking_opportunity {
